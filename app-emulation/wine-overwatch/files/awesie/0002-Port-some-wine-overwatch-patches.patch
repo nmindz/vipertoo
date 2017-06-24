@@ -1,0 +1,3192 @@
+From 19a067bac8285c53361978718be5f6dd6602c8ef Mon Sep 17 00:00:00 2001
+From: gamax92 <gamax92@aol.com>
+Date: Thu, 18 May 2017 14:51:30 -0600
+Subject: [PATCH 2/7] Port some wine-overwatch patches to latest wine-staging
+
+flat interpolation mode patches are missing
+---
+ .gitignore                     |   2 +
+ OVERWATCH                      |  99 ++++++
+ dlls/d3d10core/tests/device.c  | 246 ++++++++++++++
+ dlls/d3d11/tests/d3d11.c       | 396 ++++++++++++++++++++++
+ dlls/kernel32/version.c        |  24 +-
+ dlls/ntdll/Makefile.in         |   2 +-
+ dlls/ntdll/ntdll_misc.h        |  28 +-
+ dlls/ntdll/signal_x86_64.c     |  79 ++++-
+ dlls/ntdll/tests/exception.c   | 729 +++++++++++++++++++++++++++++++++++++++--
+ dlls/ntdll/thread.c            |  12 +-
+ dlls/ntdll/virtual.c           |   5 +
+ dlls/wined3d/context.c         |  99 ++++++
+ dlls/wined3d/cs.c              |   3 +
+ dlls/wined3d/device.c          |  65 ++++
+ dlls/wined3d/directx.c         |   5 +
+ dlls/wined3d/drawprim.c        |  17 +
+ dlls/wined3d/glsl_shader.c     |  66 +++-
+ dlls/wined3d/shader.c          |  26 ++
+ dlls/wined3d/state.c           |  17 +-
+ dlls/wined3d/texture.c         |  63 +++-
+ dlls/wined3d/utils.c           |   2 +-
+ dlls/wined3d/view.c            |   3 +-
+ dlls/wined3d/wined3d_gl.h      |   2 +
+ dlls/wined3d/wined3d_private.h |  41 ++-
+ tools/makedep.c                |  28 +-
+ tools/winebuild/build.h        |   3 +-
+ tools/winebuild/main.c         |  16 +-
+ tools/winebuild/spec32.c       | 224 ++++++++++++-
+ 28 files changed, 2196 insertions(+), 106 deletions(-)
+ create mode 100644 .gitignore
+ create mode 100644 OVERWATCH
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000000..da6141383c
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,2 @@
++wine64-build
++wine32-build
+diff --git a/OVERWATCH b/OVERWATCH
+new file mode 100644
+index 0000000000..0fdd91ad9d
+--- /dev/null
++++ b/OVERWATCH
+@@ -0,0 +1,99 @@
++
++
++0. Warnings
++
++Overwatch requires a graphics card with drivers that can support recent OpenGL extensions. Only
++OpenGL 4.5 has been tested; OpenGL 4.3+ may work. Please use glxinfo to verify your OpenGL version before
++reporting issues.
++
++Overwatch tries to detect cheaters. Blizzard may decide that running Overwatch under wine is verboten
++and ban you; you have been warned.
++
++There is a good chance that when Overwatch is updated, it will stop working under wine. Even if this
++works for you currently, that is not a guarantee of future performance.
++
++Until DirectX 11 support in wine is complete, there are several graphical glitches and the frame rate may
++be horrible. Some of these issues are known and some are unknown.
++
++
++1. Build Instructions
++
++Compile wine as normal for shared WoW64 (https://wiki.winehq.org/Building_Wine#Shared_WoW64).
++
++Install as normal.
++
++The ntdll.dll.fake built by wine must match the one in C:\Windows\System32. Wine will do this automatically
++if it detects an update, but if you are building manually you may need to run wineboot update:
++
++$ wine wineboot --update
++
++
++2. Running Overwatch
++
++It is recommended that you download and run Overwatch using the Battle.net client.
++
++When you run Overwatch, it is recommended that you disable fixme logging because there will be a lot of
++error messages on your console otherwise. Run wine with a WINEDEBUG environment variable of "fixme-all":
++
++$ WINEDEBUG=fixme-all ./wine 'c:\program files (x86)\battle.net\battle.net.exe'
++
++If you are having issues running Overwatch through the Battle.net client, then try to run it manually
++with wine:
++
++$ ./wine 'c:\program files (x86)\overwatch\overwatch.exe'
++
++
++3. Development
++
++Some of these patches have been submitted to upstream. Most are not tested enough and/or are known to
++break support for other programs. Others, such as the fake ntdll patch, will never be accepted as-is.
++
++We use the 1DTextures patches from wine-staging. Its development is independent. Other wined3d patches
++from wine-staging are likely incompatible.
++
++
++4. Known Issues
++
++a) Winston's bubble and some other effects are opaque.
++
++Overwatch requires support for dual source blending. Current patch fixes this issue but also causes GPU
++to crash.
++
++b) After dying, mouse input no longer works.
++
++Cause is unknown. Workaround by ALT-TAB to another window and then ALT-TAB back.
++
++c) Graphics settings higher than Low are unsupported.
++
++
++5. Troubleshooting
++
++a) Bad or incorrect fake ntdll.dll
++
++If running Overwatch.exe crashes right after these messages:
++
++$ ./wine 'c:\program files (x86)\overwatch\overwatch.exe'
++fixme:heap:RtlSetHeapInformation 0x26e0000 0 0x23e8a0 4 stub
++fixme:module:load_library unsupported flag(s) used (flags: 0x00000800)
++fixme:module:load_library unsupported flag(s) used (flags: 0x00000800)
++fixme:module:load_library unsupported flag(s) used (flags: 0x00000800)
++fixme:ntdll:EtwEventRegister ({5eec90ab-c022-44b2-a5dd-fd716a222a15}, 0x2dd107c, 0x2e01030, 0x2e01050) stub.
++fixme:ntdll:EtwEventSetInformation (deadbeef, 2, 0x2dfcdf0, 43) stub
++fixme:module:load_library unsupported flag(s) used (flags: 0x00000800)
++fixme:module:load_library unsupported flag(s) used (flags: 0x00000800)
++fixme:module:load_library unsupported flag(s) used (flags: 0x00000800)
++fixme:module:load_library unsupported flag(s) used (flags: 0x00000800)
++fixme:module:load_library unsupported flag(s) used (flags: 0x00000800)
++fixme:module:load_library unsupported flag(s) used (flags: 0x00000800)
++fixme:ntdll:EtwEventRegister ({5eec90ab-c022-44b2-a5dd-fd716a222a15}, 0x27f107c, 0x2ca4030, 0x2ca4050) stub.
++fixme:ntdll:EtwEventSetInformation (deadbeef, 2, 0x2bdb578, 43) stub
++fixme:module:load_library unsupported flag(s) used (flags: 0x00000800)
++fixme:module:load_library unsupported flag(s) used (flags: 0x00000800)
++fixme:module:load_library unsupported flag(s) used (flags: 0x00000800)
++[some error message...]
++
++Then you probably need to fix your ntdll.dll in your wine system32 directory. It is suggested that in your
++wine64 build directory you rm dlls/ntdll/ntdll.dll.fake, make, and cp it into your system32 directory.
++
++Alternatively, ./wine64 wineboot --update, may also fix the issue.
++
+diff --git a/dlls/d3d10core/tests/device.c b/dlls/d3d10core/tests/device.c
+index b0374665d1..1d8381eb9f 100644
+--- a/dlls/d3d10core/tests/device.c
++++ b/dlls/d3d10core/tests/device.c
+@@ -11771,6 +11771,250 @@ static void test_buffer_srv(void)
+     release_test_context(&test_context);
+ }
+ 
++static void test_nointerpolation(void)
++{
++    HRESULT hr;
++    ID3D10Buffer *vb;
++    ID3D10Device *device;
++    ID3D10InputLayout *layout;
++    ID3D10PixelShader *ps;
++    ID3D10VertexShader *vs;
++    UINT stride, offset;
++    struct d3d10core_test_context test_context;
++
++    static const DWORD vs_code[] =
++    {
++#if 0
++    struct vertex_out
++    {
++        float4 pos : SV_POSITION;
++        nointerpolation float4 color : COLOR0;
++    };
++
++    void main(float4 pos : POSITION, out vertex_out vo)
++    {
++        if (pos.x < 0)
++            vo.color = float4(0.0f, 0.0f, 1.0f, 1.0f);
++        else
++            vo.color = float4(1.0f, 0.0f, 0.0f, 1.0f);
++        vo.pos = pos;
++    }
++#endif
++        0x43425844, 0x20DAAA2B, 0x0D32B307, 0x886028DE, 0xD63037F3, 0x00000001, 0x00000164, 0x00000003,
++        0x0000002C, 0x00000060, 0x000000B4, 0x4E475349, 0x0000002C, 0x00000001, 0x00000008, 0x00000020,
++        0x00000000, 0x00000000, 0x00000003, 0x00000000, 0x00000F0F, 0x49534F50, 0x4E4F4954, 0xABABAB00,
++        0x4E47534F, 0x0000004C, 0x00000002, 0x00000008, 0x00000038, 0x00000000, 0x00000001, 0x00000003,
++        0x00000000, 0x0000000F, 0x00000044, 0x00000000, 0x00000000, 0x00000003, 0x00000001, 0x0000000F,
++        0x505F5653, 0x5449534F, 0x004E4F49, 0x4F4C4F43, 0xABAB0052, 0x52444853, 0x000000A8, 0x00010040,
++        0x0000002A, 0x0300005F, 0x001010F2, 0x00000000, 0x04000067, 0x001020F2, 0x00000000, 0x00000001,
++        0x03000065, 0x001020F2, 0x00000001, 0x02000068, 0x00000001, 0x05000036, 0x001020F2, 0x00000000,
++        0x00101E46, 0x00000000, 0x07000031, 0x00100012, 0x00000000, 0x0010100A, 0x00000000, 0x00004001,
++        0x00000000, 0x0F000037, 0x001020F2, 0x00000001, 0x00100006, 0x00000000, 0x00004002, 0x00000000,
++        0x00000000, 0x3F800000, 0x3F800000, 0x00004002, 0x3F800000, 0x00000000, 0x00000000, 0x3F800000,
++        0x0100003E
++    };
++
++    static const DWORD ps_code[] =
++    {
++#if 0
++    struct vertex_out
++    {
++        float4 pos : SV_POSITION;
++        nointerpolation float4 color : COLOR0;
++    };
++
++    float4 main(vertex_out vo) : SV_TARGET
++    {
++        return vo.color;
++    }
++#endif
++        0x43425844, 0x33D9B6B6, 0xB32F761F, 0xA3EBDFC9, 0xE2C9CDBD, 0x00000001, 0x000000F4, 0x00000003,
++        0x0000002C, 0x00000080, 0x000000B4, 0x4E475349, 0x0000004C, 0x00000002, 0x00000008, 0x00000038,
++        0x00000000, 0x00000001, 0x00000003, 0x00000000, 0x0000000F, 0x00000044, 0x00000000, 0x00000000,
++        0x00000003, 0x00000001, 0x00000F0F, 0x505F5653, 0x5449534F, 0x004E4F49, 0x4F4C4F43, 0xABAB0052,
++        0x4E47534F, 0x0000002C, 0x00000001, 0x00000008, 0x00000020, 0x00000000, 0x00000000, 0x00000003,
++        0x00000000, 0x0000000F, 0x545F5653, 0x45475241, 0xABAB0054, 0x52444853, 0x00000038, 0x00000040,
++        0x0000000E, 0x03000862, 0x001010F2, 0x00000001, 0x03000065, 0x001020F2, 0x00000000, 0x05000036,
++        0x001020F2, 0x00000000, 0x00101E46, 0x00000001, 0x0100003E
++    };
++
++    static const D3D10_INPUT_ELEMENT_DESC layout_desc[] =
++    {
++        { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D10_INPUT_PER_VERTEX_DATA, 0 },
++    };
++
++    static const struct vec2 quad[] =
++    {
++        { -1.0f, -1.0f },
++        { -1.0f,  1.0f },
++        {  1.0f, -1.0f },
++        {  1.0f,  1.0f },
++    };
++
++    if (!init_test_context(&test_context))
++        return;
++
++    device = test_context.device;
++
++    hr = ID3D10Device_CreateInputLayout(device, layout_desc, 1, vs_code, sizeof(vs_code), &layout);
++    ok(SUCCEEDED(hr), "Failed to create input layout, hr %#x.\n", hr);
++    vb = create_buffer(device, D3D10_BIND_VERTEX_BUFFER, sizeof(quad), quad);
++    hr = ID3D10Device_CreateVertexShader(device, vs_code, sizeof(vs_code), &vs);
++    ok(SUCCEEDED(hr), "Failed to create vertex shader, hr %#x.\n", hr);
++    hr = ID3D10Device_CreatePixelShader(device, ps_code, sizeof(ps_code), &ps);
++    ok(SUCCEEDED(hr), "Failed to create pixel shader, hr %#x.\n", hr);
++
++    ID3D10Device_IASetInputLayout(device, layout);
++    ID3D10Device_IASetPrimitiveTopology(device, D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
++    stride = sizeof(quad[0]);
++    offset = 0;
++    ID3D10Device_IASetVertexBuffers(device, 0, 1, &vb, &stride, &offset);
++    ID3D10Device_VSSetShader(device, vs);
++    ID3D10Device_PSSetShader(device, ps);
++
++    ID3D10Device_Draw(device, 4, 0);
++    check_texture_color(test_context.backbuffer, 0xffff0000, 1);
++
++    ID3D10Buffer_Release(vb);
++    ID3D10InputLayout_Release(layout);
++    ID3D10PixelShader_Release(ps);
++    ID3D10VertexShader_Release(vs);
++    release_test_context(&test_context);
++}
++
++static void test_tbuffer(void)
++{
++    D3D10_SHADER_RESOURCE_VIEW_DESC view_desc;
++    HRESULT hr;
++    ID3D10Buffer *vb, *tb;
++    ID3D10Device *device;
++    ID3D10InputLayout *layout;
++    ID3D10PixelShader *ps;
++    ID3D10ShaderResourceView *tb_view;
++    ID3D10VertexShader *vs;
++    UINT stride, offset;
++    struct d3d10core_test_context test_context;
++
++    static const DWORD vs_code[] =
++    {
++#if 0
++    float4 main(float4 pos : POSITION) : SV_POSITION
++    {
++        return pos;
++    }
++#endif
++        0x43425844, 0x77f030d7, 0x18f13b6b, 0x47fff01f, 0x97ead6d3, 0x00000001, 0x000001b4, 0x00000005,
++        0x00000034, 0x0000008c, 0x000000c0, 0x000000f4, 0x00000138, 0x46454452, 0x00000050, 0x00000000,
++        0x00000000, 0x00000000, 0x0000001c, 0xfffe0400, 0x00000100, 0x0000001c, 0x7263694d, 0x666f736f,
++        0x52282074, 0x4c482029, 0x53204c53, 0x65646168, 0x6f432072, 0x6c69706d, 0x36207265, 0x392e332e,
++        0x2e303036, 0x38333631, 0xabab0034, 0x4e475349, 0x0000002c, 0x00000001, 0x00000008, 0x00000020,
++        0x00000000, 0x00000000, 0x00000003, 0x00000000, 0x00000f0f, 0x49534f50, 0x4e4f4954, 0xababab00,
++        0x4e47534f, 0x0000002c, 0x00000001, 0x00000008, 0x00000020, 0x00000000, 0x00000001, 0x00000003,
++        0x00000000, 0x0000000f, 0x505f5653, 0x5449534f, 0x004e4f49, 0x52444853, 0x0000003c, 0x00010040,
++        0x0000000f, 0x0300005f, 0x001010f2, 0x00000000, 0x04000067, 0x001020f2, 0x00000000, 0x00000001,
++        0x05000036, 0x001020f2, 0x00000000, 0x00101e46, 0x00000000, 0x0100003e, 0x54415453, 0x00000074,
++        0x00000002, 0x00000000, 0x00000000, 0x00000002, 0x00000000, 0x00000000, 0x00000000, 0x00000001,
++        0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
++        0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
++        0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000
++    };
++
++    static const DWORD ps_code[] =
++    {
++#if 0
++    tbuffer buf : register(t0)
++    {
++        float4 color;
++    };
++
++    float4 main() : SV_TARGET
++    {
++        return color;
++    }
++#endif
++        0x43425844, 0x921b0266, 0x0d6e2f9c, 0x7e3b529c, 0xab5ab054, 0x00000001, 0x0000022c, 0x00000005,
++        0x00000034, 0x000000f8, 0x00000108, 0x0000013c, 0x000001b0, 0x46454452, 0x000000bc, 0x00000001,
++        0x00000040, 0x00000001, 0x0000001c, 0xffff0400, 0x00000100, 0x00000088, 0x0000003c, 0x00000001,
++        0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000001, 0x00667562, 0x0000003c,
++        0x00000001, 0x00000058, 0x00000010, 0x00000000, 0x00000001, 0x00000070, 0x00000000, 0x00000010,
++        0x00000002, 0x00000078, 0x00000000, 0x6f6c6f63, 0xabab0072, 0x00030001, 0x00040001, 0x00000000,
++        0x00000000, 0x7263694d, 0x666f736f, 0x52282074, 0x4c482029, 0x53204c53, 0x65646168, 0x6f432072,
++        0x6c69706d, 0x36207265, 0x392e332e, 0x2e303036, 0x38333631, 0xabab0034, 0x4e475349, 0x00000008,
++        0x00000000, 0x00000008, 0x4e47534f, 0x0000002c, 0x00000001, 0x00000008, 0x00000020, 0x00000000,
++        0x00000000, 0x00000003, 0x00000000, 0x0000000f, 0x545f5653, 0x45475241, 0xabab0054, 0x52444853,
++        0x0000006c, 0x00000040, 0x0000001b, 0x04000858, 0x00107000, 0x00000000, 0x00006666, 0x03000065,
++        0x001020f2, 0x00000000, 0x02000068, 0x00000001, 0x0a00002d, 0x001000f2, 0x00000000, 0x00004002,
++        0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00107e46, 0x00000000, 0x05000036, 0x001020f2,
++        0x00000000, 0x00100e46, 0x00000000, 0x0100003e, 0x54415453, 0x00000074, 0x00000003, 0x00000001,
++        0x00000000, 0x00000001, 0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x00000000,
++        0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x00000000,
++        0x00000000, 0x00000001, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
++        0x00000000, 0x00000000, 0x00000000
++    };
++
++    static const D3D10_INPUT_ELEMENT_DESC layout_desc[] =
++    {
++        { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D10_INPUT_PER_VERTEX_DATA, 0 },
++    };
++
++    static const struct vec2 quad[] =
++    {
++        { -1.0f, -1.0f },
++        { -1.0f,  1.0f },
++        { 1.0f, -1.0f },
++        { 1.0f,  1.0f },
++    };
++
++    static const struct vec4 color[] =
++    {
++        { 1.0f, 1.0f, 0.0f, 1.0f },
++    };
++    static const float red[] = {1.0f, 0.0f, 0.0f, 1.0f};
++
++    if (!init_test_context(&test_context))
++        return;
++
++    device = test_context.device;
++    ID3D10Device_ClearRenderTargetView(device, test_context.backbuffer_rtv, red);
++
++    hr = ID3D10Device_CreateInputLayout(device, layout_desc, 1, vs_code, sizeof(vs_code), &layout);
++    ok(SUCCEEDED(hr), "Failed to create input layout, hr %#x.\n", hr);
++    vb = create_buffer(device, D3D10_BIND_VERTEX_BUFFER, sizeof(quad), quad);
++    hr = ID3D10Device_CreateVertexShader(device, vs_code, sizeof(vs_code), &vs);
++    ok(SUCCEEDED(hr), "Failed to create vertex shader, hr %#x.\n", hr);
++    hr = ID3D10Device_CreatePixelShader(device, ps_code, sizeof(ps_code), &ps);
++    ok(SUCCEEDED(hr), "Failed to create pixel shader, hr %#x.\n", hr);
++
++    tb = create_buffer(device, D3D10_BIND_SHADER_RESOURCE, sizeof(color), color);
++    view_desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
++    view_desc.ViewDimension = D3D10_SRV_DIMENSION_BUFFER;
++    view_desc.Buffer.ElementOffset = 0;
++    view_desc.Buffer.ElementWidth = 1;
++    hr = ID3D10Device_CreateShaderResourceView(device, (ID3D10Resource*)tb, &view_desc, &tb_view);
++    ok(SUCCEEDED(hr), "Failed to create texture buffer view, hr %#x.\n", hr);
++
++    ID3D10Device_IASetInputLayout(device, layout);
++    ID3D10Device_IASetPrimitiveTopology(device, D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
++    stride = sizeof(quad[0]);
++    offset = 0;
++    ID3D10Device_IASetVertexBuffers(device, 0, 1, &vb, &stride, &offset);
++    ID3D10Device_VSSetShader(device, vs);
++    ID3D10Device_PSSetShader(device, ps);
++
++    ID3D10Device_PSSetShaderResources(device, 0, 1, &tb_view);
++
++    ID3D10Device_Draw(device, 4, 0);
++    check_texture_color(test_context.backbuffer, 0xff00ffff, 1);
++
++    ID3D10ShaderResourceView_Release(tb_view);
++    ID3D10Buffer_Release(tb);
++    ID3D10Buffer_Release(vb);
++    ID3D10InputLayout_Release(layout);
++    ID3D10PixelShader_Release(ps);
++    ID3D10VertexShader_Release(vs);
++    release_test_context(&test_context);
++}
++
+ static void test_geometry_shader(void)
+ {
+     static const struct
+@@ -12543,6 +12787,8 @@ START_TEST(device)
+     test_primitive_restart();
+     test_resinfo_instruction();
+     test_render_target_device_mismatch();
++    test_nointerpolation();
++    test_tbuffer();
+     test_buffer_srv();
+     test_geometry_shader();
+     test_stream_output();
+diff --git a/dlls/d3d11/tests/d3d11.c b/dlls/d3d11/tests/d3d11.c
+index 6aa6a8d725..552bdd8793 100644
+--- a/dlls/d3d11/tests/d3d11.c
++++ b/dlls/d3d11/tests/d3d11.c
+@@ -17351,6 +17351,399 @@ static void test_tgsm(void)
+     release_test_context(&test_context);
+ }
+ 
++static void test_nointerpolation(void)
++{
++    HRESULT hr;
++    ID3D11Buffer *vb;
++    ID3D11Device *device;
++    ID3D11DeviceContext *context;
++    ID3D11InputLayout *layout;
++    ID3D11PixelShader *ps;
++    ID3D11VertexShader *vs;
++    UINT stride, offset;
++    struct d3d11_test_context test_context;
++
++    static const DWORD vs_code[] =
++    {
++#if 0
++    struct vertex_out
++    {
++        float4 pos : SV_POSITION;
++        nointerpolation float4 color : COLOR0;
++    };
++
++    void main(float4 pos : POSITION, out vertex_out vo)
++    {
++        if (pos.x < 0)
++            vo.color = float4(0.0f, 0.0f, 1.0f, 1.0f);
++        else
++            vo.color = float4(1.0f, 0.0f, 0.0f, 1.0f);
++        vo.pos = pos;
++    }
++#endif
++        0x43425844, 0x20DAAA2B, 0x0D32B307, 0x886028DE, 0xD63037F3, 0x00000001, 0x00000164, 0x00000003,
++        0x0000002C, 0x00000060, 0x000000B4, 0x4E475349, 0x0000002C, 0x00000001, 0x00000008, 0x00000020,
++        0x00000000, 0x00000000, 0x00000003, 0x00000000, 0x00000F0F, 0x49534F50, 0x4E4F4954, 0xABABAB00,
++        0x4E47534F, 0x0000004C, 0x00000002, 0x00000008, 0x00000038, 0x00000000, 0x00000001, 0x00000003,
++        0x00000000, 0x0000000F, 0x00000044, 0x00000000, 0x00000000, 0x00000003, 0x00000001, 0x0000000F,
++        0x505F5653, 0x5449534F, 0x004E4F49, 0x4F4C4F43, 0xABAB0052, 0x52444853, 0x000000A8, 0x00010040,
++        0x0000002A, 0x0300005F, 0x001010F2, 0x00000000, 0x04000067, 0x001020F2, 0x00000000, 0x00000001,
++        0x03000065, 0x001020F2, 0x00000001, 0x02000068, 0x00000001, 0x05000036, 0x001020F2, 0x00000000,
++        0x00101E46, 0x00000000, 0x07000031, 0x00100012, 0x00000000, 0x0010100A, 0x00000000, 0x00004001,
++        0x00000000, 0x0F000037, 0x001020F2, 0x00000001, 0x00100006, 0x00000000, 0x00004002, 0x00000000,
++        0x00000000, 0x3F800000, 0x3F800000, 0x00004002, 0x3F800000, 0x00000000, 0x00000000, 0x3F800000,
++        0x0100003E
++    };
++
++    static const DWORD ps_code[] =
++    {
++#if 0
++    struct vertex_out
++    {
++        float4 pos : SV_POSITION;
++        nointerpolation float4 color : COLOR0;
++    };
++
++    float4 main(vertex_out vo) : SV_TARGET
++    {
++        return vo.color;
++    }
++#endif
++        0x43425844, 0x33D9B6B6, 0xB32F761F, 0xA3EBDFC9, 0xE2C9CDBD, 0x00000001, 0x000000F4, 0x00000003,
++        0x0000002C, 0x00000080, 0x000000B4, 0x4E475349, 0x0000004C, 0x00000002, 0x00000008, 0x00000038,
++        0x00000000, 0x00000001, 0x00000003, 0x00000000, 0x0000000F, 0x00000044, 0x00000000, 0x00000000,
++        0x00000003, 0x00000001, 0x00000F0F, 0x505F5653, 0x5449534F, 0x004E4F49, 0x4F4C4F43, 0xABAB0052,
++        0x4E47534F, 0x0000002C, 0x00000001, 0x00000008, 0x00000020, 0x00000000, 0x00000000, 0x00000003,
++        0x00000000, 0x0000000F, 0x545F5653, 0x45475241, 0xABAB0054, 0x52444853, 0x00000038, 0x00000040,
++        0x0000000E, 0x03000862, 0x001010F2, 0x00000001, 0x03000065, 0x001020F2, 0x00000000, 0x05000036,
++        0x001020F2, 0x00000000, 0x00101E46, 0x00000001, 0x0100003E
++    };
++
++    static const D3D11_INPUT_ELEMENT_DESC layout_desc[] =
++    {
++        { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
++    };
++
++    static const struct vec2 quad[] =
++    {
++        { -1.0f, -1.0f },
++        { -1.0f,  1.0f },
++        {  1.0f, -1.0f },
++        {  1.0f,  1.0f },
++    };
++
++    if (!init_test_context(&test_context, NULL))
++        return;
++
++    device = test_context.device;
++    context = test_context.immediate_context;
++
++    hr = ID3D11Device_CreateInputLayout(device, layout_desc, 1, vs_code, sizeof(vs_code), &layout);
++    ok(SUCCEEDED(hr), "Failed to create input layout, hr %#x.\n", hr);
++    vb = create_buffer(device, D3D11_BIND_VERTEX_BUFFER, sizeof(quad), quad);
++    hr = ID3D11Device_CreateVertexShader(device, vs_code, sizeof(vs_code), NULL, &vs);
++    ok(SUCCEEDED(hr), "Failed to create vertex shader, hr %#x.\n", hr);
++    hr = ID3D11Device_CreatePixelShader(device, ps_code, sizeof(ps_code), NULL, &ps);
++    ok(SUCCEEDED(hr), "Failed to create pixel shader, hr %#x.\n", hr);
++
++    ID3D11DeviceContext_IASetInputLayout(context, layout);
++    ID3D11DeviceContext_IASetPrimitiveTopology(context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
++    stride = sizeof(quad[0]);
++    offset = 0;
++    ID3D11DeviceContext_IASetVertexBuffers(context, 0, 1, &vb, &stride, &offset);
++    ID3D11DeviceContext_VSSetShader(context, vs, NULL, 0);
++    ID3D11DeviceContext_PSSetShader(context, ps, NULL, 0);
++
++    ID3D11DeviceContext_Draw(context, 4, 0);
++    check_texture_color(test_context.backbuffer, 0xffff0000, 1);
++
++    ID3D11Buffer_Release(vb);
++    ID3D11InputLayout_Release(layout);
++    ID3D11PixelShader_Release(ps);
++    ID3D11VertexShader_Release(vs);
++    release_test_context(&test_context);
++}
++
++static void test_tbuffer(void)
++{
++    D3D11_SHADER_RESOURCE_VIEW_DESC view_desc;
++    HRESULT hr;
++    ID3D11Buffer *vb, *tb;
++    ID3D11Device *device;
++    ID3D11DeviceContext *context;
++    ID3D11InputLayout *layout;
++    ID3D11PixelShader *ps;
++    ID3D11ShaderResourceView *tb_view;
++    ID3D11VertexShader *vs;
++    UINT stride, offset;
++    struct d3d11_test_context test_context;
++
++    static const DWORD vs_code[] =
++    {
++#if 0
++    float4 main(float4 pos : POSITION) : SV_POSITION
++    {
++        return pos;
++    }
++#endif
++        0x43425844, 0x77f030d7, 0x18f13b6b, 0x47fff01f, 0x97ead6d3, 0x00000001, 0x000001b4, 0x00000005,
++        0x00000034, 0x0000008c, 0x000000c0, 0x000000f4, 0x00000138, 0x46454452, 0x00000050, 0x00000000,
++        0x00000000, 0x00000000, 0x0000001c, 0xfffe0400, 0x00000100, 0x0000001c, 0x7263694d, 0x666f736f,
++        0x52282074, 0x4c482029, 0x53204c53, 0x65646168, 0x6f432072, 0x6c69706d, 0x36207265, 0x392e332e,
++        0x2e303036, 0x38333631, 0xabab0034, 0x4e475349, 0x0000002c, 0x00000001, 0x00000008, 0x00000020,
++        0x00000000, 0x00000000, 0x00000003, 0x00000000, 0x00000f0f, 0x49534f50, 0x4e4f4954, 0xababab00,
++        0x4e47534f, 0x0000002c, 0x00000001, 0x00000008, 0x00000020, 0x00000000, 0x00000001, 0x00000003,
++        0x00000000, 0x0000000f, 0x505f5653, 0x5449534f, 0x004e4f49, 0x52444853, 0x0000003c, 0x00010040,
++        0x0000000f, 0x0300005f, 0x001010f2, 0x00000000, 0x04000067, 0x001020f2, 0x00000000, 0x00000001,
++        0x05000036, 0x001020f2, 0x00000000, 0x00101e46, 0x00000000, 0x0100003e, 0x54415453, 0x00000074,
++        0x00000002, 0x00000000, 0x00000000, 0x00000002, 0x00000000, 0x00000000, 0x00000000, 0x00000001,
++        0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
++        0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
++        0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000
++    };
++
++    static const DWORD ps_code[] =
++    {
++#if 0
++    tbuffer buf : register(t0)
++    {
++        float4 color;
++    };
++
++    float4 main() : SV_TARGET
++    {
++        return color;
++    }
++#endif
++        0x43425844, 0x921b0266, 0x0d6e2f9c, 0x7e3b529c, 0xab5ab054, 0x00000001, 0x0000022c, 0x00000005,
++        0x00000034, 0x000000f8, 0x00000108, 0x0000013c, 0x000001b0, 0x46454452, 0x000000bc, 0x00000001,
++        0x00000040, 0x00000001, 0x0000001c, 0xffff0400, 0x00000100, 0x00000088, 0x0000003c, 0x00000001,
++        0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000001, 0x00667562, 0x0000003c,
++        0x00000001, 0x00000058, 0x00000010, 0x00000000, 0x00000001, 0x00000070, 0x00000000, 0x00000010,
++        0x00000002, 0x00000078, 0x00000000, 0x6f6c6f63, 0xabab0072, 0x00030001, 0x00040001, 0x00000000,
++        0x00000000, 0x7263694d, 0x666f736f, 0x52282074, 0x4c482029, 0x53204c53, 0x65646168, 0x6f432072,
++        0x6c69706d, 0x36207265, 0x392e332e, 0x2e303036, 0x38333631, 0xabab0034, 0x4e475349, 0x00000008,
++        0x00000000, 0x00000008, 0x4e47534f, 0x0000002c, 0x00000001, 0x00000008, 0x00000020, 0x00000000,
++        0x00000000, 0x00000003, 0x00000000, 0x0000000f, 0x545f5653, 0x45475241, 0xabab0054, 0x52444853,
++        0x0000006c, 0x00000040, 0x0000001b, 0x04000858, 0x00107000, 0x00000000, 0x00006666, 0x03000065,
++        0x001020f2, 0x00000000, 0x02000068, 0x00000001, 0x0a00002d, 0x001000f2, 0x00000000, 0x00004002,
++        0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00107e46, 0x00000000, 0x05000036, 0x001020f2,
++        0x00000000, 0x00100e46, 0x00000000, 0x0100003e, 0x54415453, 0x00000074, 0x00000003, 0x00000001,
++        0x00000000, 0x00000001, 0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x00000000,
++        0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x00000000,
++        0x00000000, 0x00000001, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
++        0x00000000, 0x00000000, 0x00000000
++    };
++
++    static const D3D11_INPUT_ELEMENT_DESC layout_desc[] =
++    {
++        { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
++    };
++
++    static const struct vec2 quad[] =
++    {
++        { -1.0f, -1.0f },
++        { -1.0f,  1.0f },
++        { 1.0f, -1.0f },
++        { 1.0f,  1.0f },
++    };
++
++    static const struct vec4 color[] =
++    {
++        { 1.0f, 1.0f, 0.0f, 1.0f },
++    };
++    static const float red[] = {1.0f, 0.0f, 0.0f, 1.0f};
++
++    if (!init_test_context(&test_context, NULL))
++        return;
++
++    device = test_context.device;
++    context = test_context.immediate_context;
++    ID3D11DeviceContext_ClearRenderTargetView(context, test_context.backbuffer_rtv, red);
++
++    hr = ID3D11Device_CreateInputLayout(device, layout_desc, 1, vs_code, sizeof(vs_code), &layout);
++    ok(SUCCEEDED(hr), "Failed to create input layout, hr %#x.\n", hr);
++    vb = create_buffer(device, D3D11_BIND_VERTEX_BUFFER, sizeof(quad), quad);
++    hr = ID3D11Device_CreateVertexShader(device, vs_code, sizeof(vs_code), NULL, &vs);
++    ok(SUCCEEDED(hr), "Failed to create vertex shader, hr %#x.\n", hr);
++    hr = ID3D11Device_CreatePixelShader(device, ps_code, sizeof(ps_code), NULL, &ps);
++    ok(SUCCEEDED(hr), "Failed to create pixel shader, hr %#x.\n", hr);
++
++    tb = create_buffer(device, D3D11_BIND_SHADER_RESOURCE, sizeof(color), color);
++    view_desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
++    view_desc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
++    view_desc.Buffer.ElementOffset = 0;
++    view_desc.Buffer.ElementWidth = 1;
++    hr = ID3D11Device_CreateShaderResourceView(device, (ID3D11Resource*)tb, &view_desc, &tb_view);
++    ok(SUCCEEDED(hr), "Failed to create texture buffer view, hr %#x.\n", hr);
++
++    ID3D11DeviceContext_IASetInputLayout(context, layout);
++    ID3D11DeviceContext_IASetPrimitiveTopology(context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
++    stride = sizeof(quad[0]);
++    offset = 0;
++    ID3D11DeviceContext_IASetVertexBuffers(context, 0, 1, &vb, &stride, &offset);
++    ID3D11DeviceContext_VSSetShader(context, vs, NULL, 0);
++    ID3D11DeviceContext_PSSetShader(context, ps, NULL, 0);
++
++    ID3D11DeviceContext_PSSetShaderResources(context, 0, 1, &tb_view);
++
++    ID3D11DeviceContext_Draw(context, 4, 0);
++    check_texture_color(test_context.backbuffer, 0xff00ffff, 1);
++
++    ID3D11ShaderResourceView_Release(tb_view);
++    ID3D11Buffer_Release(tb);
++    ID3D11Buffer_Release(vb);
++    ID3D11InputLayout_Release(layout);
++    ID3D11PixelShader_Release(ps);
++    ID3D11VertexShader_Release(vs);
++    release_test_context(&test_context);
++}
++
++static void test_sm4_vertexid(void)
++{
++    struct d3d11_test_context test_context;
++    ID3D11PixelShader *ps;
++    ID3D11DeviceContext *context;
++    ID3D11Device *device;
++    DWORD expected_color;
++    ID3D11Buffer *ib;
++    HRESULT hr;
++    unsigned int stride, offset;
++
++    static const DWORD ps_code[] =
++    {
++#if 0
++struct VSOut
++{
++    float4 pos : SV_Position;
++    float4 color : color;
++};
++
++float4 main(VSOut input) : SV_TARGET
++{
++    return input.color;
++}
++#endif
++        0x43425844, 0x119e48d1, 0x468aecb3, 0x0a405be5, 0x4e203b82, 0x00000001, 0x000000f4, 0x00000003,
++        0x0000002c, 0x00000080, 0x000000b4, 0x4e475349, 0x0000004c, 0x00000002, 0x00000008, 0x00000038,
++        0x00000000, 0x00000001, 0x00000003, 0x00000000, 0x0000000f, 0x00000044, 0x00000000, 0x00000000,
++        0x00000003, 0x00000001, 0x00000f0f, 0x505f5653, 0x7469736f, 0x006e6f69, 0x6f6c6f63, 0xabab0072,
++        0x4e47534f, 0x0000002c, 0x00000001, 0x00000008, 0x00000020, 0x00000000, 0x00000000, 0x00000003,
++        0x00000000, 0x0000000f, 0x545f5653, 0x45475241, 0xabab0054, 0x52444853, 0x00000038, 0x00000040,
++        0x0000000e, 0x03001062, 0x001010f2, 0x00000001, 0x03000065, 0x001020f2, 0x00000000, 0x05000036,
++        0x001020f2, 0x00000000, 0x00101e46, 0x00000001, 0x0100003e
++    };
++    static const D3D11_INPUT_ELEMENT_DESC layout_desc[] =
++    {
++        { "SV_Position", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
++        { "SV_VertexID", 0, DXGI_FORMAT_R32_UINT, 1, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
++    };
++    static const DWORD vs_code[] =
++    {
++#if 0
++struct VSIn
++{
++    float4 pos : SV_Position;
++    uint vertexid : SV_VertexID;
++};
++
++struct VSOut
++{
++    float4 pos : SV_Position;
++    float4 color : color;
++};
++
++VSOut main(VSIn input)
++{
++    VSOut output;
++    if (input.vertexid < 4)
++        output.color = float4(0.0, 1.0, 1.0, 1.0);
++    else
++        output.color = float4(1.0, 0.0, 0.0, 1.0);
++    output.pos = input.pos;
++    return output;
++}
++#endif
++        0x43425844, 0xcbc9ab23, 0x3f01a208, 0x1df619da, 0xe93cc736, 0x00000001, 0x00000198, 0x00000003,
++        0x0000002c, 0x00000084, 0x000000d8, 0x4e475349, 0x00000050, 0x00000002, 0x00000008, 0x00000038,
++        0x00000000, 0x00000000, 0x00000003, 0x00000000, 0x00000f0f, 0x00000044, 0x00000000, 0x00000006,
++        0x00000001, 0x00000001, 0x00000101, 0x505f5653, 0x7469736f, 0x006e6f69, 0x565f5653, 0x65747265,
++        0x00444978, 0x4e47534f, 0x0000004c, 0x00000002, 0x00000008, 0x00000038, 0x00000000, 0x00000001,
++        0x00000003, 0x00000000, 0x0000000f, 0x00000044, 0x00000000, 0x00000000, 0x00000003, 0x00000001,
++        0x0000000f, 0x505f5653, 0x7469736f, 0x006e6f69, 0x6f6c6f63, 0xabab0072, 0x52444853, 0x000000b8,
++        0x00010040, 0x0000002e, 0x0300005f, 0x001010f2, 0x00000000, 0x04000060, 0x00101012, 0x00000001,
++        0x00000006, 0x04000067, 0x001020f2, 0x00000000, 0x00000001, 0x03000065, 0x001020f2, 0x00000001,
++        0x02000068, 0x00000001, 0x05000036, 0x001020f2, 0x00000000, 0x00101e46, 0x00000000, 0x0700004f,
++        0x00100012, 0x00000000, 0x0010100a, 0x00000001, 0x00004001, 0x00000004, 0x0f000037, 0x001020f2,
++        0x00000001, 0x00100006, 0x00000000, 0x00004002, 0x00000000, 0x3f800000, 0x3f800000, 0x3f800000,
++        0x00004002, 0x3f800000, 0x00000000, 0x00000000, 0x3f800000, 0x0100003e
++    };
++    static const struct vec2 vertices[] =
++    {
++        { 0.0f, 0.0f },
++        { 0.0f, 0.0f },
++        { 0.0f, 0.0f },
++        { 0.0f, 0.0f },
++        { -1.0f, -1.0f },
++        { -1.0f,  1.0f },
++        { 1.0f, -1.0f },
++        { 1.0f,  1.0f },
++    };
++    static const unsigned int indices[] =
++    {
++        0, 0, 0, 0, 0, 1, 2, 3
++    };
++
++    if (!init_test_context(&test_context, NULL))
++        return;
++
++    device = test_context.device;
++    context = test_context.immediate_context;
++
++    hr = ID3D11Device_CreatePixelShader(device, ps_code, sizeof(ps_code), NULL, &ps);
++    ok(SUCCEEDED(hr), "Failed to create return pixel shader, hr %#x.\n", hr);
++
++    ID3D11DeviceContext_PSSetShader(context, ps, NULL, 0);
++    expected_color = 0xffffff00;
++
++    ib = create_buffer(device, D3D11_BIND_INDEX_BUFFER, sizeof(indices), indices);
++
++    hr = ID3D11Device_CreateInputLayout(device, layout_desc,
++        sizeof(layout_desc) / sizeof(*layout_desc),
++        vs_code, sizeof(vs_code), &test_context.input_layout);
++    ok(SUCCEEDED(hr), "Failed to create input layout, hr %#x.\n", hr);
++
++    test_context.vb = create_buffer(device, D3D11_BIND_VERTEX_BUFFER, sizeof(vertices), vertices);
++
++    hr = ID3D11Device_CreateVertexShader(device, vs_code, sizeof(vs_code), NULL, &test_context.vs);
++    ok(SUCCEEDED(hr), "Failed to create vertex shader, hr %#x.\n", hr);
++
++    ID3D11DeviceContext_IASetInputLayout(test_context.immediate_context, test_context.input_layout);
++    ID3D11DeviceContext_IASetPrimitiveTopology(test_context.immediate_context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
++    stride = sizeof(*vertices);
++    offset = 0;
++    ID3D11DeviceContext_IASetVertexBuffers(test_context.immediate_context, 0, 1, &test_context.vb, &stride, &offset);
++    ID3D11DeviceContext_IASetIndexBuffer(test_context.immediate_context, ib, DXGI_FORMAT_R32_UINT, 0);
++    ID3D11DeviceContext_VSSetShader(test_context.immediate_context, test_context.vs, NULL, 0);
++
++    ID3D11DeviceContext_Draw(test_context.immediate_context, 4, 4);
++    check_texture_color(test_context.backbuffer, expected_color, 0);
++
++    ID3D11DeviceContext_DrawIndexed(test_context.immediate_context, 4, 4, 4);
++    check_texture_color(test_context.backbuffer, expected_color, 0);
++
++    ID3D11DeviceContext_DrawInstanced(test_context.immediate_context, 4, 1, 4, 0);
++    check_texture_color(test_context.backbuffer, expected_color, 0);
++
++    ID3D11DeviceContext_DrawIndexedInstanced(test_context.immediate_context, 4, 1, 4, 4, 0);
++    check_texture_color(test_context.backbuffer, expected_color, 0);
++
++    ID3D11Buffer_Release(ib);
++    ID3D11PixelShader_Release(ps);
++
++    release_test_context(&test_context);
++}
++
+ static void test_geometry_shader(void)
+ {
+     static const struct
+@@ -19074,6 +19467,9 @@ START_TEST(d3d11)
+     test_resinfo_instruction();
+     test_sm5_bufinfo_instruction();
+     test_render_target_device_mismatch();
++    test_nointerpolation();
++    test_tbuffer();
++    test_sm4_vertexid();
+     test_buffer_srv();
+     run_for_each_feature_level_in_range(D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0,
+             test_unaligned_raw_buffer_access);
+diff --git a/dlls/kernel32/version.c b/dlls/kernel32/version.c
+index 3cca2ae68e..bf9bcf71a2 100644
+--- a/dlls/kernel32/version.c
++++ b/dlls/kernel32/version.c
+@@ -41,6 +41,16 @@
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(ver);
+ 
++typedef struct PACKAGE_ID
++{
++    UINT32 reserved;
++    UINT32 processorArchitecture;
++    UINT64 version;
++    PWSTR name;
++    PWSTR publisher;
++    PWSTR resourceId;
++    PWSTR publisherId;
++} PACKAGE_ID;
+ 
+ /***********************************************************************
+  *         GetVersion   (KERNEL32.@)
+@@ -207,8 +217,18 @@ BOOL WINAPI GetProductInfo(DWORD dwOSMajorVersion, DWORD dwOSMinorVersion, DWORD
+  */
+ LONG WINAPI GetCurrentPackageId(UINT32 *len, BYTE *buffer)
+ {
+-    FIXME("(%p %p): stub\n", len, buffer);
+-    return APPMODEL_ERROR_NO_PACKAGE;
++    FIXME("(%p %p): partial stub\n", len, buffer);
++
++    if (*len < sizeof(PACKAGE_ID))
++    {
++        *len = sizeof(PACKAGE_ID);
++        return ERROR_INSUFFICIENT_BUFFER;
++    }
++
++    *len = sizeof(PACKAGE_ID);
++    memset(buffer, 0, sizeof(PACKAGE_ID));
++
++    return ERROR_SUCCESS;
+ }
+ 
+ /***********************************************************************
+diff --git a/dlls/ntdll/Makefile.in b/dlls/ntdll/Makefile.in
+index ed4bb94e4d..289d742ae4 100644
+--- a/dlls/ntdll/Makefile.in
++++ b/dlls/ntdll/Makefile.in
+@@ -3,7 +3,7 @@ MODULE    = ntdll.dll
+ IMPORTLIB = ntdll
+ IMPORTS   = winecrt0
+ EXTRALIBS = $(IOKIT_LIBS) $(RT_LIBS) $(PTHREAD_LIBS)
+-EXTRADLLFLAGS = -nodefaultlibs -Wl,--image-base,0x7bc00000
++EXTRADLLFLAGS = -nodefaultlibs -Wl,--image-base,0x7bc00000 -Wb,--image-base,0x7bc00000 -Wb,--fake-native,$(MODULE).so
+ 
+ C_SRCS = \
+ 	actctx.c \
+diff --git a/dlls/ntdll/ntdll_misc.h b/dlls/ntdll/ntdll_misc.h
+index 787e41c2e8..4f69fd40e8 100644
+--- a/dlls/ntdll/ntdll_misc.h
++++ b/dlls/ntdll/ntdll_misc.h
+@@ -223,25 +223,27 @@ struct debug_info
+ /* thread private data, stored in NtCurrentTeb()->SpareBytes1 */
+ struct ntdll_thread_data
+ {
++#if defined(__i386__) || defined(__x86_64__)
++    DWORD_PTR          dr0;           /* 1bc/2e8 Debug registers */
++    DWORD_PTR          dr1;           /* 1c0/2f0 */
++    DWORD_PTR          dr2;           /* 1c4/2f8 */
++    DWORD_PTR          dr3;           /* 1c8/300 */
++    DWORD_PTR          dr6;           /* 1cc/308 */
++    DWORD_PTR          dr7;           /* 1d0/310 */
++#endif
+ #ifdef __i386__
+-    DWORD              dr0;           /* 1bc Debug registers */
+-    DWORD              dr1;           /* 1c0 */
+-    DWORD              dr2;           /* 1c4 */
+-    DWORD              dr3;           /* 1c8 */
+-    DWORD              dr6;           /* 1cc */
+-    DWORD              dr7;           /* 1d0 */
+     DWORD              fs;            /* 1d4 TEB selector */
+     DWORD              gs;            /* 1d8 libc selector; update winebuild if you move this! */
+     void              *vm86_ptr;      /* 1dc data for vm86 mode */
+ #else
+-    void              *exit_frame;    /*    /2e8 exit frame pointer */
++    void              *exit_frame;    /*    /318 exit frame pointer */
+ #endif
+-    struct debug_info *debug_info;    /* 1e0/2f0 info for debugstr functions */
+-    int                request_fd;    /* 1e4/2f8 fd for sending server requests */
+-    int                reply_fd;      /* 1e8/2fc fd for receiving server replies */
+-    int                wait_fd[2];    /* 1ec/300 fd for sleeping server requests */
+-    BOOL               wow64_redir;   /* 1f4/308 Wow64 filesystem redirection flag */
+-    pthread_t          pthread_id;    /* 1f8/310 pthread thread id */
++    struct debug_info *debug_info;    /* 1e0/320 info for debugstr functions */
++    int                request_fd;    /* 1e4/328 fd for sending server requests */
++    int                reply_fd;      /* 1e8/32c fd for receiving server replies */
++    int                wait_fd[2];    /* 1ec/330 fd for sleeping server requests */
++    BOOL               wow64_redir;   /* 1f4/338 Wow64 filesystem redirection flag */
++    pthread_t          pthread_id;    /* 1f8/340 pthread thread id */
+ #ifdef __i386__
+     WINE_VM86_TEB_INFO vm86;          /* 1fc vm86 private data */
+     void              *exit_frame;    /* 204 exit frame pointer */
+diff --git a/dlls/ntdll/signal_x86_64.c b/dlls/ntdll/signal_x86_64.c
+index f3f14c998d..47f5f31cc4 100644
+--- a/dlls/ntdll/signal_x86_64.c
++++ b/dlls/ntdll/signal_x86_64.c
+@@ -1649,7 +1649,9 @@ static inline BOOL is_inside_signal_stack( void *ptr )
+  */
+ static void save_context( CONTEXT *context, const ucontext_t *sigcontext )
+ {
+-    context->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_SEGMENTS;
++    struct ntdll_thread_data * const regs = ntdll_get_thread_data();
++
++    context->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_SEGMENTS | CONTEXT_DEBUG_REGISTERS;
+     context->Rax    = RAX_sig(sigcontext);
+     context->Rcx    = RCX_sig(sigcontext);
+     context->Rdx    = RDX_sig(sigcontext);
+@@ -1686,6 +1688,12 @@ static void save_context( CONTEXT *context, const ucontext_t *sigcontext )
+ #else
+     __asm__("movw %%ss,%0" : "=m" (context->SegSs));
+ #endif
++    context->Dr0          = regs->dr0;
++    context->Dr1          = regs->dr1;
++    context->Dr2          = regs->dr2;
++    context->Dr3          = regs->dr3;
++    context->Dr6          = regs->dr6;
++    context->Dr7          = regs->dr7;
+     if (FPU_sig(sigcontext))
+     {
+         context->ContextFlags |= CONTEXT_FLOATING_POINT;
+@@ -1702,6 +1710,14 @@ static void save_context( CONTEXT *context, const ucontext_t *sigcontext )
+  */
+ static void restore_context( const CONTEXT *context, ucontext_t *sigcontext )
+ {
++    struct ntdll_thread_data * const regs = ntdll_get_thread_data();
++
++    regs->dr0 = context->Dr0;
++    regs->dr1 = context->Dr1;
++    regs->dr2 = context->Dr2;
++    regs->dr3 = context->Dr3;
++    regs->dr6 = context->Dr6;
++    regs->dr7 = context->Dr7;
+     RAX_sig(sigcontext) = context->Rax;
+     RCX_sig(sigcontext) = context->Rcx;
+     RDX_sig(sigcontext) = context->Rdx;
+@@ -1861,6 +1877,16 @@ __ASM_GLOBAL_FUNC( set_full_cpu_context,
+ void set_cpu_context( const CONTEXT *context )
+ {
+     DWORD flags = context->ContextFlags & ~CONTEXT_AMD64;
++
++    if (flags & CONTEXT_DEBUG_REGISTERS)
++    {
++        ntdll_get_thread_data()->dr0 = context->Dr0;
++        ntdll_get_thread_data()->dr1 = context->Dr1;
++        ntdll_get_thread_data()->dr2 = context->Dr2;
++        ntdll_get_thread_data()->dr3 = context->Dr3;
++        ntdll_get_thread_data()->dr6 = context->Dr6;
++        ntdll_get_thread_data()->dr7 = context->Dr7;
++    }
+     if (flags & CONTEXT_FULL)
+     {
+         if (!(flags & CONTEXT_CONTROL))
+@@ -2563,7 +2589,7 @@ static void raise_segv_exception( EXCEPTION_RECORD *rec, CONTEXT *context )
+         }
+         break;
+     }
+-    status = raise_exception( rec, context, TRUE );
++    status = NtRaiseException( rec, context, TRUE );
+     if (status) raise_status( status, rec );
+ done:
+     set_cpu_context( context );
+@@ -2571,13 +2597,43 @@ done:
+ 
+ 
+ /**********************************************************************
++ *		raise_trap_exception
++ */
++static void raise_trap_exception( EXCEPTION_RECORD *rec, CONTEXT *context )
++{
++    NTSTATUS status;
++
++    if (rec->ExceptionCode == EXCEPTION_SINGLE_STEP)
++    {
++        /* when single stepping can't tell whether this is a hw bp or a
++         * single step interrupt. try to avoid as much overhead as possible
++         * and only do a server call if there is any hw bp enabled. */
++
++        if( !(context->EFlags & 0x100) || (ntdll_get_thread_data()->dr7 & 0xff) )
++        {
++            /* (possible) hardware breakpoint, fetch the debug registers */
++            DWORD saved_flags = context->ContextFlags;
++            context->ContextFlags = CONTEXT_DEBUG_REGISTERS;
++            NtGetContextThread(GetCurrentThread(), context);
++            context->ContextFlags |= saved_flags;  /* restore flags */
++        }
++
++        context->EFlags &= ~0x100;  /* clear single-step flag */
++    }
++
++    status = NtRaiseException( rec, context, TRUE );
++    raise_status( status, rec );
++}
++
++
++/**********************************************************************
+  *		raise_generic_exception
+  *
+  * Generic raise function for exceptions that don't need special treatment.
+  */
+ static void raise_generic_exception( EXCEPTION_RECORD *rec, CONTEXT *context )
+ {
+-    NTSTATUS status = raise_exception( rec, context, TRUE );
++    NTSTATUS status = NtRaiseException( rec, context, TRUE );
+     if (status) raise_status( status, rec );
+     set_cpu_context( context );
+ }
+@@ -2592,6 +2648,9 @@ static inline BOOL handle_interrupt( unsigned int interrupt, EXCEPTION_RECORD *r
+ {
+     switch(interrupt)
+     {
++    case 0x2c:
++        rec->ExceptionCode = STATUS_ASSERTION_FAILURE;
++        return TRUE;
+     case 0x2d:
+         context->Rip += 3;
+         rec->ExceptionCode = EXCEPTION_BREAKPOINT;
+@@ -2655,7 +2714,6 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
+             WORD err = ERROR_sig(ucontext);
+             if ((err & 7) == 2 && handle_interrupt( err >> 3, rec, win_context )) break;
+             rec->ExceptionCode = err ? EXCEPTION_ACCESS_VIOLATION : EXCEPTION_PRIV_INSTRUCTION;
+-            rec->ExceptionCode = EXCEPTION_ACCESS_VIOLATION;
+         }
+         break;
+     case TRAP_x86_PAGEFLT:  /* Page fault */
+@@ -2688,7 +2746,8 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
+  */
+ static void trap_handler( int signal, siginfo_t *siginfo, void *sigcontext )
+ {
+-    EXCEPTION_RECORD *rec = setup_exception( sigcontext, raise_generic_exception );
++    ucontext_t *ucontext = sigcontext;
++    EXCEPTION_RECORD *rec = setup_exception( sigcontext, raise_trap_exception );
+ 
+     switch (siginfo->si_code)
+     {
+@@ -2697,6 +2756,16 @@ static void trap_handler( int signal, siginfo_t *siginfo, void *sigcontext )
+         rec->ExceptionCode = EXCEPTION_SINGLE_STEP;
+         break;
+     case TRAP_BRKPT:   /* Breakpoint exception */
++    case SI_KERNEL:    /* Software breakpoint */
++        /* Check if this is actuallly icebp instruction */
++        if (((unsigned char *)rec->ExceptionAddress)[-1] == 0xF1)
++        {
++            rec->ExceptionCode = EXCEPTION_SINGLE_STEP;
++            break;
++        }
++        /* Validate assumption that SI_KERNEL == TRAP_x86_BPTFLT */
++        if (siginfo->si_code == SI_KERNEL && TRAP_sig(ucontext) != TRAP_x86_BPTFLT)
++            FIXME( "si_code == SI_KERNEL, but TRAP_sig(context) == %lld\n", TRAP_sig(ucontext) );
+         rec->ExceptionAddress = (char *)rec->ExceptionAddress - 1;  /* back up over the int3 instruction */
+         /* fall through */
+     default:
+diff --git a/dlls/ntdll/tests/exception.c b/dlls/ntdll/tests/exception.c
+index cf3b235b2f..7750b40035 100644
+--- a/dlls/ntdll/tests/exception.c
++++ b/dlls/ntdll/tests/exception.c
+@@ -111,6 +111,49 @@ typedef struct _JUMP_BUFFER
+     SETJMP_FLOAT128  Xmm15;
+ } _JUMP_BUFFER;
+ 
++typedef enum _UNWIND_OP_CODES
++{
++    UWOP_PUSH_NONVOL = 0,
++    UWOP_ALLOC_LARGE,
++    UWOP_ALLOC_SMALL,
++    UWOP_SET_FPREG,
++    UWOP_SAVE_NONVOL,
++    UWOP_SAVE_NONVOL_FAR,
++    UWOP_SAVE_XMM128,
++    UWOP_SAVE_XMM128_FAR,
++    UWOP_PUSH_MACHFRAME
++} UNWIND_CODE_OPS;
++
++typedef union _UNWIND_CODE
++{
++    struct
++    {
++        BYTE CodeOffset;
++        BYTE UnwindOp : 4;
++        BYTE OpInfo   : 4;
++    } u;
++    USHORT FrameOffset;
++} UNWIND_CODE, *PUNWIND_CODE;
++
++typedef struct _UNWIND_INFO
++{
++    BYTE Version       : 3;
++    BYTE Flags         : 5;
++    BYTE SizeOfProlog;
++    BYTE CountOfCodes;
++    BYTE FrameRegister : 4;
++    BYTE FrameOffset   : 4;
++    UNWIND_CODE UnwindCode[1]; /* actually CountOfCodes (aligned) */
++/*
++ *  union
++ *  {
++ *      OPTIONAL ULONG ExceptionHandler;
++ *      OPTIONAL ULONG FunctionEntry;
++ *  };
++ *  OPTIONAL ULONG ExceptionData[];
++ */
++} UNWIND_INFO, *PUNWIND_INFO;
++
+ static BOOLEAN   (CDECL *pRtlAddFunctionTable)(RUNTIME_FUNCTION*, DWORD, DWORD64);
+ static BOOLEAN   (CDECL *pRtlDeleteFunctionTable)(RUNTIME_FUNCTION*);
+ static BOOLEAN   (CDECL *pRtlInstallFunctionTableCallback)(DWORD64, DWORD64, DWORD, PGET_RUNTIME_FUNCTION_CALLBACK, PVOID, PCWSTR);
+@@ -119,6 +162,7 @@ static EXCEPTION_DISPOSITION (WINAPI *p__C_specific_handler)(EXCEPTION_RECORD*,
+ static VOID      (WINAPI *pRtlCaptureContext)(CONTEXT*);
+ static VOID      (CDECL *pRtlRestoreContext)(CONTEXT*, EXCEPTION_RECORD*);
+ static VOID      (CDECL *pRtlUnwindEx)(VOID*, VOID*, EXCEPTION_RECORD*, VOID*, CONTEXT*, UNWIND_HISTORY_TABLE*);
++static PIMAGE_NT_HEADERS (WINAPI *pRtlImageNtHeader)(PVOID);
+ static int       (CDECL *p_setjmp)(_JUMP_BUFFER*);
+ #endif
+ 
+@@ -1998,9 +2042,648 @@ static void test___C_specific_handler(void)
+     ok(dispatch.ScopeIndex == 1, "dispatch.ScopeIndex = %d\n", dispatch.ScopeIndex);
+ }
+ 
++/* This is heavily based on the i386 exception tests. */
++static const struct exception
++{
++    BYTE     code[18];      /* asm code */
++    BYTE     offset;        /* offset of faulting instruction */
++    BYTE     length;        /* length of faulting instruction */
++    NTSTATUS status;        /* expected status code */
++    BOOL     todo;
++    DWORD    nb_params;     /* expected number of parameters */
++    ULONG64  params[4];     /* expected parameters */
++    NTSTATUS alt_status;    /* alternative status code */
++    DWORD    alt_nb_params; /* alternative number of parameters */
++    ULONG64  alt_params[4]; /* alternative parameters */
++} exceptions[] =
++{
++/* 0 */
++    /* test some privileged instructions */
++    { { 0xfb, 0xc3 },  /* 0: sti; ret */
++      0, 1, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0x6c, 0xc3 },  /* 1: insb (%dx); ret */
++      0, 1, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0x6d, 0xc3 },  /* 2: insl (%dx); ret */
++      0, 1, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0x6e, 0xc3 },  /* 3: outsb (%dx); ret */
++      0, 1, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0x6f, 0xc3 },  /* 4: outsl (%dx); ret */
++      0, 1, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++/* 5 */
++    { { 0xe4, 0x11, 0xc3 },  /* 5: inb $0x11,%al; ret */
++      0, 2, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0xe5, 0x11, 0xc3 },  /* 6: inl $0x11,%eax; ret */
++      0, 2, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0xe6, 0x11, 0xc3 },  /* 7: outb %al,$0x11; ret */
++      0, 2, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0xe7, 0x11, 0xc3 },  /* 8: outl %eax,$0x11; ret */
++      0, 2, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0xed, 0xc3 },  /* 9: inl (%dx),%eax; ret */
++      0, 1, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++/* 10 */
++    { { 0xee, 0xc3 },  /* 10: outb %al,(%dx); ret */
++      0, 1, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0xef, 0xc3 },  /* 11: outl %eax,(%dx); ret */
++      0, 1, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0xf4, 0xc3 },  /* 12: hlt; ret */
++      0, 1, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0xfa, 0xc3 },  /* 13: cli; ret */
++      0, 1, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++
++    /* test iret to invalid selector */
++    { { 0x6a, 0x00, 0x6a, 0x00, 0x6a, 0x00, 0xcf, 0x83, 0xc4, 0x18, 0xc3 },
++      /* 15: pushq $0; pushq $0; pushq $0; iret; addl $24,%esp; ret */
++      6, 1, STATUS_ACCESS_VIOLATION, TRUE, 2, { 0, 0xffffffffffffffff } },
++/* 15 */
++    /* test loading an invalid selector */
++    { { 0xb8, 0xef, 0xbe, 0x00, 0x00, 0x8e, 0xe8, 0xc3 },  /* 16: mov $beef,%ax; mov %ax,%gs; ret */
++      5, 2, STATUS_ACCESS_VIOLATION, TRUE, 2, { 0, 0xbee8 } }, /* 0xbee8 or 0xffffffff */
++
++    /* test overlong instruction (limit is 15 bytes) */
++    { { 0x64,0x64,0x64,0x64,0x64,0x64,0x64,0x64,0x64,0x64,0x64,0x64,0x64,0x64,0x64,0xfa,0xc3 },
++      0, 16, STATUS_ILLEGAL_INSTRUCTION, TRUE, 0, { 0 },
++      STATUS_ACCESS_VIOLATION, 2, { 0, 0xffffffffffffffff } },
++
++    /* test invalid interrupt */
++    { { 0xcd, 0xff, 0xc3 },   /* int $0xff; ret */
++      0, 2, STATUS_ACCESS_VIOLATION, TRUE, 2, { 0, 0xffffffffffffffff } },
++
++    /* test moves to/from Crx */
++    { { 0x0f, 0x20, 0xc0, 0xc3 },  /* movl %cr0,%eax; ret */
++      0, 3, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0x0f, 0x20, 0xe0, 0xc3 },  /* movl %cr4,%eax; ret */
++      0, 3, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++/* 20 */
++    { { 0x0f, 0x22, 0xc0, 0xc3 },  /* movl %eax,%cr0; ret */
++      0, 3, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0x0f, 0x22, 0xe0, 0xc3 },  /* movl %eax,%cr4; ret */
++      0, 3, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++
++    /* test moves to/from Drx */
++    { { 0x0f, 0x21, 0xc0, 0xc3 },  /* movl %dr0,%eax; ret */
++      0, 3, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0x0f, 0x21, 0xc8, 0xc3 },  /* movl %dr1,%eax; ret */
++      0, 3, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0x0f, 0x21, 0xf8, 0xc3 },  /* movl %dr7,%eax; ret */
++      0, 3, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++/* 25 */
++    { { 0x0f, 0x23, 0xc0, 0xc3 },  /* movl %eax,%dr0; ret */
++      0, 3, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0x0f, 0x23, 0xc8, 0xc3 },  /* movl %eax,%dr1; ret */
++      0, 3, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++    { { 0x0f, 0x23, 0xf8, 0xc3 },  /* movl %eax,%dr7; ret */
++      0, 3, STATUS_PRIVILEGED_INSTRUCTION, FALSE, 0 },
++
++    /* test memory reads */
++    { { 0xa1, 0xfc, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xc3 },  /* movl 0xfffffffffffffffc,%eax; ret */
++      0, 9, STATUS_ACCESS_VIOLATION, FALSE, 2, { 0, 0xfffffffffffffffc } },
++    { { 0xa1, 0xfd, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xc3 },  /* movl 0xfffffffffffffffd,%eax; ret */
++      0, 9, STATUS_ACCESS_VIOLATION, FALSE, 2, { 0, 0xfffffffffffffffd } },
++/* 30 */
++    { { 0xa1, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xc3 },  /* movl 0xfffffffffffffffe,%eax; ret */
++      0, 9, STATUS_ACCESS_VIOLATION, FALSE, 2, { 0, 0xfffffffffffffffe } },
++    { { 0xa1, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xc3 },  /* movl 0xffffffffffffffff,%eax; ret */
++      0, 9, STATUS_ACCESS_VIOLATION, FALSE, 2, { 0, 0xffffffffffffffff } },
++
++    /* test memory writes */
++    { { 0xa3, 0xfc, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xc3 },  /* movl %eax,0xfffffffffffffffc; ret */
++      0, 9, STATUS_ACCESS_VIOLATION, FALSE, 2, { 1, 0xfffffffffffffffc } },
++    { { 0xa3, 0xfd, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xc3 },  /* movl %eax,0xfffffffffffffffd; ret */
++      0, 9, STATUS_ACCESS_VIOLATION, FALSE, 2, { 1, 0xfffffffffffffffd } },
++    { { 0xa3, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xc3 },  /* movl %eax,0xfffffffffffffffe; ret */
++      0, 9, STATUS_ACCESS_VIOLATION, FALSE, 2, { 1, 0xfffffffffffffffe } },
++/* 35 */
++    { { 0xa3, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xc3 },  /* movl %eax,0xffffffffffffffff; ret */
++      0, 9, STATUS_ACCESS_VIOLATION, FALSE, 2, { 1, 0xffffffffffffffff } },
++
++    { { 0xf1, 0x90, 0xc3 },  /* icebp; nop; ret */
++      1, 1, STATUS_SINGLE_STEP, FALSE, 0 },
++
++    { { 0xcd, 0x2c, 0xc3 },
++      0, 2, STATUS_ASSERTION_FAILURE, FALSE, 0 },
++};
++
++static int got_exception;
++
++static DWORD run_exception_test(void *handler, const void* context,
++                               const void *code, unsigned int code_size,
++                               DWORD access)
++{
++    unsigned char buf[8 + 6 + 8 + 8];
++    RUNTIME_FUNCTION runtime_func;
++    UNWIND_INFO *unwind = (UNWIND_INFO *)buf;
++    DWORD (*func)(void) = code_mem;
++    DWORD oldaccess, oldaccess2, result;
++
++    runtime_func.BeginAddress = 0;
++    runtime_func.EndAddress = code_size;
++    runtime_func.UnwindData = 0x1000;
++
++    unwind->Version = 1;
++    unwind->Flags = UNW_FLAG_EHANDLER;
++    unwind->SizeOfProlog = 0;
++    unwind->CountOfCodes = 0;
++    unwind->FrameRegister = 0;
++    unwind->FrameOffset = 0;
++    *(ULONG *)&buf[4] = 0x1010;
++    *(const void **)&buf[8] = context;
++
++    buf[16] = 0xff;
++    buf[17] = 0x25;
++    *(ULONG *)&buf[18] = 2;
++    /* Must be 8-byte aligned to handled alignment check exceptions. */
++    *(void **)&buf[24] = handler;
++
++    memcpy((unsigned char *)code_mem + 0x1000, buf, sizeof(buf));
++    memcpy(code_mem, code, code_size);
++    if(access)
++        VirtualProtect(code_mem, code_size, access, &oldaccess);
++
++    pRtlAddFunctionTable(&runtime_func, 1, (ULONG_PTR)code_mem);
++    result = func();
++    pRtlDeleteFunctionTable(&runtime_func);
++
++    if(access)
++        VirtualProtect(code_mem, code_size, oldaccess, &oldaccess2);
++
++    return result;
++}
++
++static DWORD WINAPI handler( EXCEPTION_RECORD *rec, ULONG64 frame,
++                      CONTEXT *context, DISPATCHER_CONTEXT *dispatcher )
++{
++    const struct exception *except = *(const struct exception **)(dispatcher->HandlerData);
++    unsigned int i, parameter_count, entry = except - exceptions;
++
++    got_exception++;
++    trace( "exception %u: %x flags:%x addr:%p\n",
++           entry, rec->ExceptionCode, rec->ExceptionFlags, rec->ExceptionAddress );
++
++    if (except->todo)
++    {
++        if (rec->ExceptionCode != except->status)
++        {
++            todo_wine ok( rec->ExceptionCode == except->status ||
++                (except->alt_status != 0 && rec->ExceptionCode == except->alt_status),
++                "%u: Wrong exception code %x/%x\n", entry, rec->ExceptionCode, except->status );
++            goto skip_params;
++        }
++        else if (rec->NumberParameters != except->nb_params)
++        {
++            todo_wine ok( rec->NumberParameters == except->nb_params,
++                "%u: Unexpected parameter count %u/%u\n", entry, rec->NumberParameters, except->nb_params );
++            goto skip_params;
++        }
++    }
++
++    ok( rec->ExceptionCode == except->status ||
++        (except->alt_status != 0 && rec->ExceptionCode == except->alt_status),
++        "%u: Wrong exception code %x/%x\n", entry, rec->ExceptionCode, except->status );
++    ok( context->Rip == (DWORD_PTR)code_mem + except->offset,
++        "%u: Unexpected eip %#lx/%#lx\n", entry,
++        context->Rip, (DWORD_PTR)code_mem + except->offset );
++    ok( rec->ExceptionAddress == (char*)context->Rip ||
++        (rec->ExceptionCode == STATUS_BREAKPOINT && rec->ExceptionAddress == (char*)context->Rip + 1),
++        "%u: Unexpected exception address %p/%p\n", entry,
++        rec->ExceptionAddress, (char*)context->Rip );
++
++    if (except->status == STATUS_BREAKPOINT && is_wow64)
++        parameter_count = 1;
++    else if (except->alt_status == 0 || rec->ExceptionCode != except->alt_status)
++        parameter_count = except->nb_params;
++    else
++        parameter_count = except->alt_nb_params;
++
++    ok( rec->NumberParameters == parameter_count,
++        "%u: Unexpected parameter count %u/%u\n", entry, rec->NumberParameters, parameter_count );
++
++    /* Most CPUs (except Intel Core apparently) report a segment limit violation */
++    /* instead of page faults for accesses beyond 0xffffffffffffffff */
++    if (except->nb_params == 2 && except->params[1] >= 0xfffffffffffffffd)
++    {
++        if (rec->ExceptionInformation[0] == 0 && rec->ExceptionInformation[1] == 0xffffffffffffffff)
++            goto skip_params;
++    }
++
++    /* Seems that both 0xbee8 and 0xfffffffffffffffff can be returned in windows */
++    if (except->nb_params == 2 && rec->NumberParameters == 2
++        && except->params[1] == 0xbee8 && rec->ExceptionInformation[1] == 0xffffffffffffffff
++        && except->params[0] == rec->ExceptionInformation[0])
++    {
++        goto skip_params;
++    }
++
++    if (except->alt_status == 0 || rec->ExceptionCode != except->alt_status)
++    {
++        for (i = 0; i < rec->NumberParameters; i++)
++            ok( rec->ExceptionInformation[i] == except->params[i],
++                "%u: Wrong parameter %d: %lx/%lx\n",
++                entry, i, rec->ExceptionInformation[i], except->params[i] );
++    }
++    else
++    {
++        for (i = 0; i < rec->NumberParameters; i++)
++            ok( rec->ExceptionInformation[i] == except->alt_params[i],
++                "%u: Wrong parameter %d: %lx/%lx\n",
++                entry, i, rec->ExceptionInformation[i], except->alt_params[i] );
++    }
++
++skip_params:
++    /* don't handle exception if it's not the address we expected */
++    if (context->Rip != (DWORD_PTR)code_mem + except->offset) return ExceptionContinueSearch;
++
++    context->Rip += except->length;
++    return ExceptionContinueExecution;
++}
++
++static void test_prot_fault(void)
++{
++    unsigned int i;
++
++    for (i = 0; i < sizeof(exceptions)/sizeof(exceptions[0]); i++)
++    {
++        got_exception = 0;
++        run_exception_test(handler, &exceptions[i], &exceptions[i].code,
++                           sizeof(exceptions[i].code), 0);
++        ok( got_exception == (exceptions[i].status != 0),
++            "%u: bad exception count %d\n", i, got_exception );
++    }
++}
++
++static DWORD WINAPI unwind_rdi_rsi_handler( EXCEPTION_RECORD *rec, ULONG64 frame,
++                      CONTEXT *context, DISPATCHER_CONTEXT *dispatcher )
++{
++    if (rec->ExceptionCode != STATUS_BREAKPOINT)
++        return ExceptionContinueSearch;
++
++    RtlUnwind( (PVOID)context->Rsp, (PVOID)(context->Rip + 1), rec, NULL );
++    return ExceptionContinueSearch;
++}
++
++static const BYTE unwind_rdi_test_code[] = {
++        0x57,                                           /* push %rdi */
++        0x48, 0xc7, 0xc7, 0x55, 0x55, 0x55, 0x55,       /* mov $0x55555555, %rdi */
++        0xcc,                                           /* int3 */
++        0x48, 0x89, 0xf8,                               /* mov %rdi, %rax */
++        0x5f,                                           /* pop %rdi */
++        0xc3,                                           /* ret */
++};
++
++static const BYTE unwind_rsi_test_code[] = {
++        0x56,                                           /* push %rsi */
++        0x48, 0xc7, 0xc6, 0x33, 0x33, 0x33, 0x33,       /* mov $0x33333333, %rsi */
++        0xcc,                                           /* int3 */
++        0x48, 0x89, 0xf0,                               /* mov %rsi, %rax */
++        0x5e,                                           /* pop %rsi */
++        0xc3,                                           /* ret */
++};
++
++static void test_unwind_rdi_rsi(void)
++{
++    DWORD result;
++
++    result = run_exception_test(unwind_rdi_rsi_handler, NULL, unwind_rdi_test_code,
++            sizeof(unwind_rdi_test_code), 0);
++    ok( result == 0x55555555, "expected %x, got %x\n", 0x55555555, result );
++
++    result = run_exception_test(unwind_rdi_rsi_handler, NULL, unwind_rsi_test_code,
++            sizeof(unwind_rsi_test_code), 0);
++    ok( result == 0x33333333, "expected %x, got %x\n", 0x33333333, result );
++}
++
++struct dbgreg_test {
++    DWORD64 dr0, dr1, dr2, dr3, dr6, dr7;
++};
++
++/* test handling of debug registers */
++static DWORD WINAPI dreg_handler( EXCEPTION_RECORD *rec, ULONG64 frame,
++                                  CONTEXT *context, DISPATCHER_CONTEXT *dispatcher )
++{
++    const struct dbgreg_test *test = *(const struct dbgreg_test **)(dispatcher->HandlerData);
++
++    context->Rip += 2; /* Skips the popq (%rax) */
++    context->Dr0 = test->dr0;
++    context->Dr1 = test->dr1;
++    context->Dr2 = test->dr2;
++    context->Dr3 = test->dr3;
++    context->Dr6 = test->dr6;
++    context->Dr7 = test->dr7;
++    return ExceptionContinueExecution;
++}
++
++#define CHECK_DEBUG_REG(n, m) \
++    ok((ctx.Dr##n & m) == test->dr##n, "(%d) failed to set debug register " #n " to %lx, got %lx\n", \
++       test_num, test->dr##n, ctx.Dr##n)
++
++static void check_debug_registers(int test_num, const struct dbgreg_test *test)
++{
++    CONTEXT ctx;
++    NTSTATUS status;
++
++    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
++    status = pNtGetContextThread(GetCurrentThread(), &ctx);
++    ok(status == STATUS_SUCCESS, "NtGetContextThread failed with %x\n", status);
++
++    CHECK_DEBUG_REG(0, ~0);
++    CHECK_DEBUG_REG(1, ~0);
++    CHECK_DEBUG_REG(2, ~0);
++    CHECK_DEBUG_REG(3, ~0);
++    CHECK_DEBUG_REG(6, 0x0f);
++    CHECK_DEBUG_REG(7, ~0xdc00);
++}
++
++static const BYTE segfault_code[5] = {
++        0x31, 0xc0, /* xor    %eax,%eax */
++        0x8f, 0x00, /* popq   (%rax) - cause exception */
++        0xc3        /* ret */
++};
++
++/* test the single step exception behaviour */
++static DWORD WINAPI single_step_handler( EXCEPTION_RECORD *rec, ULONG64 frame,
++                                         CONTEXT *context, DISPATCHER_CONTEXT *dispatcher )
++{
++    got_exception++;
++    ok (!(context->EFlags & 0x100), "eflags has single stepping bit set\n");
++
++    if( got_exception < 3)
++        context->EFlags |= 0x100;  /* single step until popf instruction */
++    else {
++        /* show that the last single step exception on the popf instruction
++         * (which removed the TF bit), still is a EXCEPTION_SINGLE_STEP exception */
++        ok( rec->ExceptionCode == EXCEPTION_SINGLE_STEP,
++            "exception is not EXCEPTION_SINGLE_STEP: %x\n", rec->ExceptionCode);
++    }
++
++    return ExceptionContinueExecution;
++}
++
++static const BYTE single_stepcode[] = {
++    0x9c,                /* pushf */
++    0x58,                /* pop   %rax */
++    0x0d,0,1,0,0,        /* or    $0x100,%eax */
++    0x50,                /* push   %rax */
++    0x9d,                /* popf    */
++    0x35,0,1,0,0,        /* xor    $0x100,%eax */
++    0x50,                /* push   %rax */
++    0x9d,                /* popf    */
++    0x90,               /* nop     */
++    0xc3
++};
++
++/* Test the alignment check (AC) flag handling. */
++static const BYTE align_check_code[] = {
++    0x55,                          /* push   %rbp */
++    0x89,0xe5,                     /* mov    %rsp,%rbp */
++    0x9c,                          /* pushf   */
++    0x58,                          /* pop    %rax */
++    0x0d,0,0,4,0,               /* or     $0x40000,%eax */
++    0x50,                          /* push   %rax */
++    0x9d,                          /* popf    */
++    0x89,0xe0,                  /* mov %rsp, %rax */
++    0x8b,0x40,0x1,              /* mov 0x1(%rax), %eax - cause exception */
++    0x9c,                          /* pushf   */
++    0x58,                          /* pop    %rax */
++    0x25,0xff,0xff,0xfb,0xff,   /* and    $~0x40000,%eax */
++    0x50,                          /* push   %rax */
++    0x9d,                          /* popf    */
++    0x5d,                          /* pop    %rbp */
++    0xc3,                          /* ret     */
++};
++
++static DWORD WINAPI align_check_handler( EXCEPTION_RECORD *rec, ULONG64 frame,
++                                         CONTEXT *context, DISPATCHER_CONTEXT *dispatcher )
++{
++    ok ( context->EFlags & 0x40000, "eflags has AC bit cleared\n" );
++    got_exception++;
++    context->EFlags &= ~0x40000;
++    return ExceptionContinueExecution;
++}
++
++/* Test the direction flag handling. */
++static const BYTE direction_flag_code[] = {
++    0x55,                          /* push   %ebp */
++    0x89,0xe5,                     /* mov    %esp,%ebp */
++    0xfd,                          /* std */
++    0xfa,                          /* cli - cause exception */
++    0x5d,                          /* pop    %ebp */
++    0xc3,                          /* ret     */
++};
++
++static DWORD WINAPI direction_flag_handler( EXCEPTION_RECORD *rec, ULONG64 frame,
++                                            CONTEXT *context, DISPATCHER_CONTEXT *dispatcher )
++{
++#ifdef __GNUC__
++    DWORD64 flags;
++    __asm__("pushf; pop %0; cld" : "=r" (flags) );
++    /* older windows versions don't clear DF properly so don't test */
++    if (flags & 0x400) trace( "eflags has DF bit set\n" );
++#endif
++    ok( context->EFlags & 0x400, "context eflags has DF bit cleared\n" );
++    got_exception++;
++    context->Rip++;  /* skip cli */
++    context->EFlags &= ~0x400;  /* make sure it is cleared on return */
++    return ExceptionContinueExecution;
++}
++
++/* test single stepping over hardware breakpoint */
++static DWORD WINAPI bpx_handler( EXCEPTION_RECORD *rec, ULONG64 frame,
++                                 CONTEXT *context, DISPATCHER_CONTEXT *dispatcher )
++{
++    got_exception++;
++    ok( rec->ExceptionCode == EXCEPTION_SINGLE_STEP,
++        "wrong exception code: %x\n", rec->ExceptionCode);
++
++    if(got_exception == 1) {
++        /* hw bp exception on first nop */
++        ok( context->Rip == (DWORD64)code_mem, "rip is wrong:  %lx instead of %lx\n",
++                                             context->Rip, (DWORD64)code_mem);
++        ok( (context->Dr6 & 0xf) == 1, "B0 flag is not set in Dr6\n");
++        ok( !(context->Dr6 & 0x4000), "BS flag is set in Dr6\n");
++        context->Dr0 = context->Dr0 + 1;  /* set hw bp again on next instruction */
++        context->EFlags |= 0x100;       /* enable single stepping */
++    } else if(  got_exception == 2) {
++        /* single step exception on second nop */
++        ok( context->Rip == (DWORD64)code_mem + 1, "rip is wrong: %lx instead of %lx\n",
++                                                 context->Rip, (DWORD64)code_mem + 1);
++        ok( (context->Dr6 & 0x4000), "BS flag is not set in Dr6\n");
++       /* depending on the win version the B0 bit is already set here as well
++        ok( (context->Dr6 & 0xf) == 0, "B0...3 flags in Dr6 shouldn't be set\n"); */
++        context->EFlags |= 0x100;
++    } else if( got_exception == 3) {
++        /* hw bp exception on second nop */
++        ok( context->Rip == (DWORD64)code_mem + 1, "rip is wrong: %lx instead of %lx\n",
++                                                 context->Rip, (DWORD64)code_mem + 1);
++        ok( (context->Dr6 & 0xf) == 1, "B0 flag is not set in Dr6\n");
++        ok( !(context->Dr6 & 0x4000), "BS flag is set in Dr6\n");
++        context->Dr0 = 0;       /* clear breakpoint */
++        context->EFlags |= 0x100;
++    } else {
++        /* single step exception on ret */
++        ok( context->Rip == (DWORD64)code_mem + 2, "rip is wrong: %lx instead of %lx\n",
++                                                 context->Rip, (DWORD64)code_mem + 2);
++        ok( (context->Dr6 & 0xf) == 0, "B0...3 flags in Dr6 shouldn't be set\n");
++        ok( (context->Dr6 & 0x4000), "BS flag is not set in Dr6\n");
++    }
++
++    context->Dr6 = 0;  /* clear status register */
++    return ExceptionContinueExecution;
++}
++
++static const BYTE dummy_code[] = { 0x90, 0x90, 0x90, 0xc3 };  /* nop, nop, nop, ret */
++
++/* test int3 handling */
++static DWORD WINAPI int3_handler( EXCEPTION_RECORD *rec, ULONG64 frame,
++                                  CONTEXT *context, DISPATCHER_CONTEXT *dispatcher )
++{
++    ok( rec->ExceptionAddress == code_mem, "exception address not at: %p, but at %p\n",
++                                           code_mem,  rec->ExceptionAddress);
++    ok( context->Rip == (DWORD64)code_mem, "rip not at: %p, but at %#lx\n", code_mem, context->Rip);
++    if(context->Rip == (DWORD64)code_mem) context->Rip++; /* skip breakpoint */
++
++    return ExceptionContinueExecution;
++}
++
++static const BYTE int3_code[] = { 0xCC, 0xc3 };  /* int 3, ret */
++
++static void test_exceptions(void)
++{
++    CONTEXT ctx;
++    NTSTATUS res;
++    struct dbgreg_test dreg_test;
++
++    if (!pNtGetContextThread || !pNtSetContextThread)
++    {
++        skip( "NtGetContextThread/NtSetContextThread not found\n" );
++        return;
++    }
++
++    /* test handling of debug registers */
++    memset(&dreg_test, 0, sizeof(dreg_test));
++
++    dreg_test.dr0 = 0x42424240;
++    dreg_test.dr2 = 0x126bb070;
++    dreg_test.dr3 = 0x0badbad0;
++    dreg_test.dr7 = 0xffff0115;
++    run_exception_test(dreg_handler, &dreg_test, &segfault_code, sizeof(segfault_code), 0);
++    check_debug_registers(1, &dreg_test);
++
++    dreg_test.dr0 = 0x42424242;
++    dreg_test.dr2 = 0x100f0fe7;
++    dreg_test.dr3 = 0x0abebabe;
++    dreg_test.dr7 = 0x115;
++    run_exception_test(dreg_handler, &dreg_test, &segfault_code, sizeof(segfault_code), 0);
++    check_debug_registers(2, &dreg_test);
++
++    /* test single stepping behavior */
++    got_exception = 0;
++    run_exception_test(single_step_handler, NULL, &single_stepcode, sizeof(single_stepcode), 0);
++    ok(got_exception == 3, "expected 3 single step exceptions, got %d\n", got_exception);
++
++    /* test alignment exceptions */
++    got_exception = 0;
++    run_exception_test(align_check_handler, NULL, align_check_code, sizeof(align_check_code), 0);
++    ok(got_exception == 1, "got %d alignment faults, expected 1\n", got_exception);
++
++    /* test direction flag */
++    got_exception = 0;
++    run_exception_test(direction_flag_handler, NULL, direction_flag_code, sizeof(direction_flag_code), 0);
++    ok(got_exception == 1, "got %d exceptions, expected 1\n", got_exception);
++
++    /* test single stepping over hardware breakpoint */
++    memset(&ctx, 0, sizeof(ctx));
++    ctx.Dr0 = (DWORD64) code_mem;  /* set hw bp on first nop */
++    ctx.Dr7 = 3;
++    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
++    res = pNtSetContextThread( GetCurrentThread(), &ctx);
++    ok( res == STATUS_SUCCESS, "NtSetContextThread failed with %x\n", res);
++
++    got_exception = 0;
++    run_exception_test(bpx_handler, NULL, dummy_code, sizeof(dummy_code), 0);
++    ok( got_exception == 4,"expected 4 exceptions, got %d\n", got_exception);
++
++    /* test int3 handling */
++    run_exception_test(int3_handler, NULL, int3_code, sizeof(int3_code), 0);
++}
++
++static DWORD WINAPI read_fault_handler( EXCEPTION_RECORD *rec, ULONG64 frame,
++                                        CONTEXT *context, DISPATCHER_CONTEXT *dispatcher )
++{
++    got_exception++;
++    context->Rip += 2; /* skip faulting read */
++    trace( "fault reading %lx\n", rec->ExceptionInformation[1] );
++    return ExceptionContinueExecution;
++}
++
++static const BYTE read_dword_code[] = {
++    0x48, 0x8b, 0x0d, 0x03, 0x00, 0x00, 0x00, /* mov 3(%rip), %rcx */
++    0x8b, 0x01,                               /* mov (%rcx), %eax */
++    0xc3,                                     /* ret */
++};
++
++static void test_mem_holes(void)
++{
++    BYTE code[sizeof(read_dword_code) + sizeof(char *)];
++    char *mem;
++    void *ntdll = GetModuleHandleA( "ntdll.dll" );
++    PIMAGE_NT_HEADERS nt = RtlImageNtHeader( ntdll );
++    DWORD size = nt->OptionalHeader.SizeOfImage;
++
++    memcpy(code, read_dword_code, sizeof(read_dword_code));
++
++    got_exception = 0;
++    for (mem = ntdll; mem < (char*)ntdll + size; mem += 0x1000)
++    {
++        *(char **)&code[sizeof(read_dword_code)] = mem;
++        run_exception_test(read_fault_handler, NULL, code, sizeof(code), 0);
++    }
++    ok( got_exception == 0, "expected 0 exceptions, got %d\n", got_exception);
++}
++
+ #endif  /* __x86_64__ */
+ 
+ #if defined(__i386__) || defined(__x86_64__)
++static const struct
++{
++    ULONG_PTR dr0, dr1, dr2, dr3, dr6, dr7;
++}
++debug_register_tests[] =
++{
++    { 0x42424240, 0, 0x126bb070, 0x0badbad0, 0, 0xffff0115 },
++    { 0x42424242, 0, 0x100f0fe7, 0x0abebabe, 0, 0x115 },
++};
++
++#if defined(__x86_64__)
++static DWORD WINAPI debug_register_handler( EXCEPTION_RECORD *rec, ULONG64 frame,
++                      CONTEXT *ctx, DISPATCHER_CONTEXT *dispatcher )
++{
++    int i = **(int **)(dispatcher->HandlerData);
++
++    if (rec->ExceptionCode != STATUS_BREAKPOINT)
++        return ExceptionContinueSearch;
++
++    ok(ctx->Dr0 == debug_register_tests[i].dr0, "test %d: expected %lx, got %lx\n", i, debug_register_tests[i].dr0, ctx->Dr0);
++    ok(ctx->Dr1 == debug_register_tests[i].dr1, "test %d: expected %lx, got %lx\n", i, debug_register_tests[i].dr1, ctx->Dr1);
++    ok(ctx->Dr2 == debug_register_tests[i].dr2, "test %d: expected %lx, got %lx\n", i, debug_register_tests[i].dr2, ctx->Dr2);
++    ok(ctx->Dr3 == debug_register_tests[i].dr3, "test %d: expected %lx, got %lx\n", i, debug_register_tests[i].dr3, ctx->Dr3);
++    ok((ctx->Dr6 &  0xf00f) == debug_register_tests[i].dr6, "test %d: expected %lx, got %lx\n", i, debug_register_tests[i].dr6, ctx->Dr6);
++    ok((ctx->Dr7 & ~0xdc00) == debug_register_tests[i].dr7, "test %d: expected %lx, got %lx\n", i, debug_register_tests[i].dr7, ctx->Dr7);
++
++    ctx->Rip += 1;
++    return ExceptionContinueExecution;
++}
++
++/* Fill stack area above red zone with 0xff, then trigger exception. */
++static const BYTE debug_register_test_code[] = {
++        0x57,                                           /* push %rdi */
++        0x48, 0xc7, 0xc1, 0x00, 0x10, 0x00, 0x00,       /* mov $0x1000, %rcx */
++        0x48, 0x8d, 0xbc, 0x24, 0x80, 0xef, 0xff, 0xff, /* lea -0x1080(%rsp), %rdi */
++        0x48, 0xc7, 0xc0, 0xff, 0x00, 0x00, 0x00,       /* mov $0xff, %rax */
++        0xf3, 0xaa,                                     /* rep stosb */
++        0xcc,                                           /* int3 */
++        0x5f,                                           /* pop %rdi */
++        0xc3,                                           /* ret */
++};
++#endif
+ 
+ static DWORD WINAPI register_check_thread(void *arg)
+ {
+@@ -2024,30 +2707,21 @@ static DWORD WINAPI register_check_thread(void *arg)
+ 
+ static void test_debug_registers(void)
+ {
+-    static const struct
+-    {
+-        ULONG_PTR dr0, dr1, dr2, dr3, dr6, dr7;
+-    }
+-    tests[] =
+-    {
+-        { 0x42424240, 0, 0x126bb070, 0x0badbad0, 0, 0xffff0115 },
+-        { 0x42424242, 0, 0x100f0fe7, 0x0abebabe, 0, 0x115 },
+-    };
+     NTSTATUS status;
+     CONTEXT ctx;
+     HANDLE thread;
+     int i;
+ 
+-    for (i = 0; i < sizeof(tests)/sizeof(tests[0]); i++)
++    for (i = 0; i < sizeof(debug_register_tests)/sizeof(debug_register_tests[0]); i++)
+     {
+         memset(&ctx, 0, sizeof(ctx));
+         ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+-        ctx.Dr0 = tests[i].dr0;
+-        ctx.Dr1 = tests[i].dr1;
+-        ctx.Dr2 = tests[i].dr2;
+-        ctx.Dr3 = tests[i].dr3;
+-        ctx.Dr6 = tests[i].dr6;
+-        ctx.Dr7 = tests[i].dr7;
++        ctx.Dr0 = debug_register_tests[i].dr0;
++        ctx.Dr1 = debug_register_tests[i].dr1;
++        ctx.Dr2 = debug_register_tests[i].dr2;
++        ctx.Dr3 = debug_register_tests[i].dr3;
++        ctx.Dr6 = debug_register_tests[i].dr6;
++        ctx.Dr7 = debug_register_tests[i].dr7;
+ 
+         status = pNtSetContextThread(GetCurrentThread(), &ctx);
+         ok(status == STATUS_SUCCESS, "NtGetContextThread failed with %08x\n", status);
+@@ -2057,12 +2731,16 @@ static void test_debug_registers(void)
+ 
+         status = pNtGetContextThread(GetCurrentThread(), &ctx);
+         ok(status == STATUS_SUCCESS, "NtGetContextThread failed with %08x\n", status);
+-        ok(ctx.Dr0 == tests[i].dr0, "test %d: expected %lx, got %lx\n", i, tests[i].dr0, (DWORD_PTR)ctx.Dr0);
+-        ok(ctx.Dr1 == tests[i].dr1, "test %d: expected %lx, got %lx\n", i, tests[i].dr1, (DWORD_PTR)ctx.Dr1);
+-        ok(ctx.Dr2 == tests[i].dr2, "test %d: expected %lx, got %lx\n", i, tests[i].dr2, (DWORD_PTR)ctx.Dr2);
+-        ok(ctx.Dr3 == tests[i].dr3, "test %d: expected %lx, got %lx\n", i, tests[i].dr3, (DWORD_PTR)ctx.Dr3);
+-        ok((ctx.Dr6 &  0xf00f) == tests[i].dr6, "test %d: expected %lx, got %lx\n", i, tests[i].dr6, (DWORD_PTR)ctx.Dr6);
+-        ok((ctx.Dr7 & ~0xdc00) == tests[i].dr7, "test %d: expected %lx, got %lx\n", i, tests[i].dr7, (DWORD_PTR)ctx.Dr7);
++        ok(ctx.Dr0 == debug_register_tests[i].dr0, "test %d: expected %lx, got %lx\n", i, debug_register_tests[i].dr0, (DWORD_PTR)ctx.Dr0);
++        ok(ctx.Dr1 == debug_register_tests[i].dr1, "test %d: expected %lx, got %lx\n", i, debug_register_tests[i].dr1, (DWORD_PTR)ctx.Dr1);
++        ok(ctx.Dr2 == debug_register_tests[i].dr2, "test %d: expected %lx, got %lx\n", i, debug_register_tests[i].dr2, (DWORD_PTR)ctx.Dr2);
++        ok(ctx.Dr3 == debug_register_tests[i].dr3, "test %d: expected %lx, got %lx\n", i, debug_register_tests[i].dr3, (DWORD_PTR)ctx.Dr3);
++        ok((ctx.Dr6 &  0xf00f) == debug_register_tests[i].dr6, "test %d: expected %lx, got %lx\n", i, debug_register_tests[i].dr6, (DWORD_PTR)ctx.Dr6);
++        ok((ctx.Dr7 & ~0xdc00) == debug_register_tests[i].dr7, "test %d: expected %lx, got %lx\n", i, debug_register_tests[i].dr7, (DWORD_PTR)ctx.Dr7);
++
++#if defined(__x86_64__)
++        run_exception_test(debug_register_handler, &i, debug_register_test_code, sizeof(debug_register_test_code), 0);
++#endif
+     }
+ 
+     memset(&ctx, 0, sizeof(ctx));
+@@ -2630,9 +3308,10 @@ START_TEST(exception)
+                                                                  "RtlRestoreContext" );
+     pRtlUnwindEx                       = (void *)GetProcAddress( hntdll,
+                                                                  "RtlUnwindEx" );
++    pRtlImageNtHeader                  = (void *)GetProcAddress( hntdll,
++                                                                 "RtlImageNtHeader" );
+     p_setjmp                           = (void *)GetProcAddress( hmsvcrt,
+                                                                  "_setjmp" );
+-
+     test_debug_registers();
+     test_outputdebugstring(1);
+     test_ripevent(1);
+@@ -2643,6 +3322,10 @@ START_TEST(exception)
+     test_virtual_unwind();
+     test___C_specific_handler();
+     test_restore_context();
++    test_prot_fault();
++    test_unwind_rdi_rsi();
++    test_exceptions();
++    test_mem_holes();
+ 
+     if (pRtlAddFunctionTable && pRtlDeleteFunctionTable && pRtlInstallFunctionTableCallback && pRtlLookupFunctionEntry)
+       test_dynamic_unwind();
+diff --git a/dlls/ntdll/thread.c b/dlls/ntdll/thread.c
+index b6cf2c8b79..246841c921 100644
+--- a/dlls/ntdll/thread.c
++++ b/dlls/ntdll/thread.c
+@@ -961,10 +961,14 @@ NTSTATUS WINAPI NtSetContextThread( HANDLE handle, const CONTEXT *context )
+     DWORD dummy, i;
+     BOOL self;
+ 
+-#ifdef __i386__
++#if defined(__i386__) || defined(__x86_64__)
+     /* on i386 debug registers always require a server call */
+     self = (handle == GetCurrentThread());
++#ifdef __i386__
+     if (self && (context->ContextFlags & (CONTEXT_DEBUG_REGISTERS & ~CONTEXT_i386)))
++#elif defined(__x86_64__)
++    if (self && (context->ContextFlags & (CONTEXT_DEBUG_REGISTERS & ~CONTEXT_AMD64)))
++#endif
+     {
+         self = (ntdll_get_thread_data()->dr0 == context->Dr0 &&
+                 ntdll_get_thread_data()->dr1 == context->Dr1 &&
+@@ -1120,9 +1124,13 @@ NTSTATUS WINAPI NtGetContextThread( HANDLE handle, CONTEXT *context )
+             copy_context( context, &ctx, ctx.ContextFlags & needed_flags );
+             context->ContextFlags |= ctx.ContextFlags & needed_flags;
+         }
+-#ifdef __i386__
++#if defined(__i386__) || defined(__x86_64__)
+         /* update the cached version of the debug registers */
++#ifdef __i386__
+         if (context->ContextFlags & (CONTEXT_DEBUG_REGISTERS & ~CONTEXT_i386))
++#elif defined(__x86_64__)
++        if (context->ContextFlags & (CONTEXT_DEBUG_REGISTERS & ~CONTEXT_AMD64))
++#endif
+         {
+             ntdll_get_thread_data()->dr0 = context->Dr0;
+             ntdll_get_thread_data()->dr1 = context->Dr1;
+diff --git a/dlls/ntdll/virtual.c b/dlls/ntdll/virtual.c
+index bd8f54f78c..4f06f8254f 100644
+--- a/dlls/ntdll/virtual.c
++++ b/dlls/ntdll/virtual.c
+@@ -1594,6 +1594,11 @@ NTSTATUS virtual_handle_fault( LPCVOID addr, DWORD err, BOOL on_signal_stack )
+             /* ignore fault if page is readable now */
+             if (VIRTUAL_GetUnixProt( *vprot ) & PROT_READ) ret = STATUS_SUCCESS;
+         }
++        if (err == 0 && (view->protect & VPROT_SYSTEM))
++        {
++            wine_anon_mmap(page, page_size, PROT_READ, MAP_FIXED);
++            ret = STATUS_SUCCESS;
++        }
+         if (!on_signal_stack && (*vprot & VPROT_GUARD))
+         {
+             VIRTUAL_SetProt( view, page, page_size, *vprot & ~VPROT_GUARD );
+diff --git a/dlls/wined3d/context.c b/dlls/wined3d/context.c
+index 27bff98be4..5ddd9541ca 100644
+--- a/dlls/wined3d/context.c
++++ b/dlls/wined3d/context.c
+@@ -157,6 +157,12 @@ static void context_attach_gl_texture_fbo(struct wined3d_context *context,
+                 resource->target, resource->object, resource->level);
+         checkGLcall("glFramebufferTexture1D()");
+     }
++    else if (resource->target == GL_TEXTURE_3D)
++    {
++        GL_EXTCALL(glFramebufferTexture(fbo_target, attachment,
++                resource->object, resource->level));
++        checkGLcall("glFramebufferTexture3D()");
++    }
+     else
+     {
+         gl_info->fbo_ops.glFramebufferTexture2D(fbo_target, attachment,
+@@ -2187,6 +2193,10 @@ const DWORD *context_get_tex_unit_mapping(const struct wined3d_context *context,
+             *base = MAX_FRAGMENT_SAMPLERS;
+             *count = MAX_VERTEX_SAMPLERS;
+             break;
++        case WINED3D_SHADER_TYPE_GEOMETRY:
++            *base = MAX_FRAGMENT_SAMPLERS + MAX_VERTEX_SAMPLERS;
++            *count = MAX_GEOMETRY_SAMPLERS;
++            break;
+         default:
+             ERR("Unhandled shader type %#x.\n", shader_version->type);
+             *base = 0;
+@@ -3187,11 +3197,88 @@ static void context_map_vsamplers(struct wined3d_context *context, BOOL ps, cons
+     }
+ }
+ 
++static BOOL context_unit_free_for_gs(const struct wined3d_context *context,
++        const struct wined3d_state *state, DWORD unit)
++{
++    const struct wined3d_shader_resource_info *ps_resource_info = NULL, *vs_resource_info = NULL;
++    DWORD current_mapping = context->rev_tex_unit_map[unit];
++
++    if (use_ps(state))
++        ps_resource_info = state->shader[WINED3D_SHADER_TYPE_PIXEL]->reg_maps.resource_info;
++    if (use_vs(state))
++        vs_resource_info = state->shader[WINED3D_SHADER_TYPE_VERTEX]->reg_maps.resource_info;
++
++    /* Not currently used */
++    if (current_mapping == WINED3D_UNMAPPED_STAGE)
++        return TRUE;
++
++    if (current_mapping < MAX_FRAGMENT_SAMPLERS)
++    {
++        /* Used by a fragment sampler */
++        if (!ps_resource_info)
++        {
++            /* No pixel shader, check fixed function */
++            return current_mapping >= MAX_TEXTURES || !(context->fixed_function_usage_map & (1u << current_mapping));
++        }
++
++        /* Pixel shader, check the shader's sampler map */
++        return !ps_resource_info[current_mapping].type;
++    }
++
++    current_mapping -= MAX_FRAGMENT_SAMPLERS;
++    if (current_mapping < MAX_VERTEX_SAMPLERS)
++    {
++        /* Used by a vertex sampler, check the shader's sampler map */
++        return !vs_resource_info || !vs_resource_info[current_mapping].type;
++    }
++
++    return TRUE;
++}
++
++static void context_map_gsamplers(struct wined3d_context *context, const struct wined3d_state *state)
++{
++    const struct wined3d_shader_resource_info *gs_resource_info =
++            state->shader[WINED3D_SHADER_TYPE_GEOMETRY]->reg_maps.resource_info;
++    const struct wined3d_gl_info *gl_info = context->gl_info;
++    int start = min(MAX_FRAGMENT_SAMPLERS + MAX_VERTEX_SAMPLERS, gl_info->limits.combined_samplers) - 1;
++    int i;
++
++    if (gl_info->limits.combined_samplers >= MAX_COMBINED_SAMPLERS)
++        return;
++
++    for (i = 0; i < MAX_GEOMETRY_SAMPLERS; ++i)
++    {
++        DWORD gsampler_idx = i + MAX_FRAGMENT_SAMPLERS + MAX_VERTEX_SAMPLERS;
++        if (gs_resource_info[i].type)
++        {
++            while (start >= 0)
++            {
++                if (context_unit_free_for_gs(context, state, start))
++                {
++                    if (context->tex_unit_map[gsampler_idx] != start)
++                    {
++                        context_map_stage(context, gsampler_idx, start);
++                        context_invalidate_state(context, STATE_SAMPLER(gsampler_idx));
++                    }
++
++                    --start;
++                    break;
++                }
++
++                --start;
++            }
++            if (context->tex_unit_map[gsampler_idx] == WINED3D_UNMAPPED_STAGE)
++                WARN("Couldn't find a free texture unit for vertex sampler %u.\n", i);
++        }
++    }
++}
++
+ static void context_update_tex_unit_map(struct wined3d_context *context, const struct wined3d_state *state)
+ {
+     const struct wined3d_gl_info *gl_info = context->gl_info;
+     BOOL vs = use_vs(state);
+     BOOL ps = use_ps(state);
++    BOOL gs = use_gs(state);
+ 
+     if (!ps)
+         context_update_fixed_function_usage_map(context, state);
+@@ -3211,6 +3298,9 @@ static void context_update_tex_unit_map(struct wined3d_context *context, const s
+ 
+     if (vs)
+         context_map_vsamplers(context, ps, state);
++
++    if (gs)
++        context_map_gsamplers(context, state);
+ }
+ 
+ /* Context activation is done by the caller. */
+@@ -3471,6 +3561,15 @@ static void context_preload_textures(struct wined3d_context *context, const stru
+ {
+     unsigned int i;
+ 
++    if (use_gs(state))
++    {
++        for (i = 0; i < MAX_GEOMETRY_SAMPLERS; ++i)
++        {
++            if (state->shader[WINED3D_SHADER_TYPE_GEOMETRY]->reg_maps.resource_info[i].type)
++                context_preload_texture(context, state, MAX_FRAGMENT_SAMPLERS + MAX_VERTEX_SAMPLERS + i);
++        }
++    }
++
+     if (use_vs(state))
+     {
+         for (i = 0; i < MAX_VERTEX_SAMPLERS; ++i)
+diff --git a/dlls/wined3d/cs.c b/dlls/wined3d/cs.c
+index d768ca3bec..106457d15a 100644
+--- a/dlls/wined3d/cs.c
++++ b/dlls/wined3d/cs.c
+@@ -764,6 +764,9 @@ static void wined3d_cs_exec_draw(struct wined3d_cs *cs, const void *data)
+         device_invalidate_state(cs->device, STATE_BASEVERTEXINDEX);
+     }
+ 
++    state->base_vertex_index = op->indexed ? op->base_vertex_idx : op->start_idx;
++    device_invalidate_state(cs->device, STATE_BASEVERTEXINDEX);
++
+     if (state->gl_primitive_type != op->primitive_type)
+     {
+         if (state->gl_primitive_type == GL_POINTS || op->primitive_type == GL_POINTS)
+diff --git a/dlls/wined3d/device.c b/dlls/wined3d/device.c
+index 76d2ecdafa..e4166acd95 100644
+--- a/dlls/wined3d/device.c
++++ b/dlls/wined3d/device.c
+@@ -4371,6 +4371,71 @@ HRESULT CDECL wined3d_device_clear_rendertarget_view(struct wined3d_device *devi
+         return WINED3D_OK;
+ 
+     resource = view->resource;
++    if (resource->type == WINED3D_RTYPE_TEXTURE_3D)
++    {
++        const struct wined3d_gl_info *gl_info;
++        struct wined3d_context *context;
++        struct wined3d_texture *texture = texture_from_resource(resource);
++        struct gl_texture *gl_texture = wined3d_texture_get_gl_texture(texture, FALSE);
++        unsigned int i;
++        GLuint fbo;
++        GLenum draw_buffer = GL_COLOR_ATTACHMENT0;
++
++        ERR("Clearing 3D target, flags=%x\n", flags);
++
++        context = context_acquire(device, NULL, 0);
++        gl_info = context->gl_info;
++
++        wined3d_texture_prepare_texture(texture, context, FALSE);
++
++        if (flags & WINED3DCLEAR_TARGET)
++        {
++            gl_info->gl_ops.gl.p_glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++            context_invalidate_state(context, STATE_RENDER(WINED3D_RS_COLORWRITEENABLE));
++            context_invalidate_state(context, STATE_RENDER(WINED3D_RS_COLORWRITEENABLE1));
++            context_invalidate_state(context, STATE_RENDER(WINED3D_RS_COLORWRITEENABLE2));
++            context_invalidate_state(context, STATE_RENDER(WINED3D_RS_COLORWRITEENABLE3));
++            gl_info->gl_ops.gl.p_glClearColor(color->r, color->g, color->b, color->a);
++            checkGLcall("glClearColor");
++        }
++
++        if (rect)
++            ERR("ignoring rect\n");
++
++        context_invalidate_state(context, STATE_RENDER(WINED3D_RS_SCISSORTESTENABLE));
++        gl_info->gl_ops.gl.p_glDisable(GL_SCISSOR_TEST);
++
++        gl_info->fbo_ops.glGenFramebuffers(1, &fbo);
++        checkGLcall("glGenFramebuffers()");
++
++        gl_info->fbo_ops.glBindFramebuffer(GL_FRAMEBUFFER, fbo);
++        checkGLcall("glBindFramebuffer()");
++
++        for (i = 0; i < view->layer_count; i++)
++        {
++            gl_info->fbo_ops.glFramebufferTexture3D(GL_FRAMEBUFFER, draw_buffer,
++                    GL_TEXTURE_3D, gl_texture->name, gl_texture->base_level, i);
++            checkGLcall("glFramebufferTexture3D()");
++
++            GL_EXTCALL(glDrawBuffers(1, &draw_buffer));
++            checkGLcall("glDrawBuffers()");
++
++            gl_info->gl_ops.gl.p_glClear(GL_COLOR_BUFFER_BIT);
++            checkGLcall("glClear");
++        }
++
++        gl_info->fbo_ops.glBindFramebuffer(GL_FRAMEBUFFER, 0);
++        checkGLcall("glBindFramebuffer()");
++        gl_info->fbo_ops.glDeleteFramebuffers(1, &fbo);
++        checkGLcall("glDeleteFramebuffer()");
++
++        if (wined3d_settings.strict_draw_ordering)
++            gl_info->gl_ops.gl.p_glFlush();
++
++        context_release(context);
++        return WINED3D_OK;
++    }
++
+     if (resource->type != WINED3D_RTYPE_TEXTURE_2D)
+     {
+         FIXME("Not implemented for %s resources.\n", debug_d3dresourcetype(resource->type));
+diff --git a/dlls/wined3d/directx.c b/dlls/wined3d/directx.c
+index 6d4ab462f0..2790a69a23 100644
+--- a/dlls/wined3d/directx.c
++++ b/dlls/wined3d/directx.c
+@@ -110,6 +110,7 @@ static const struct wined3d_extension_map gl_extension_map[] =
+     {"GL_APPLE_ycbcr_422",                  APPLE_YCBCR_422               },
+ 
+     /* ARB */
++    {"GL_ARB_base_instance",                ARB_BASE_INSTANCE             },
+     {"GL_ARB_blend_func_extended",          ARB_BLEND_FUNC_EXTENDED       },
+     {"GL_ARB_clear_buffer_object",          ARB_CLEAR_BUFFER_OBJECT       },
+     {"GL_ARB_clear_texture",                ARB_CLEAR_TEXTURE             },
+@@ -217,6 +218,7 @@ static const struct wined3d_extension_map gl_extension_map[] =
+     {"GL_EXT_framebuffer_blit",             EXT_FRAMEBUFFER_BLIT          },
+     {"GL_EXT_framebuffer_multisample",      EXT_FRAMEBUFFER_MULTISAMPLE   },
+     {"GL_EXT_framebuffer_object",           EXT_FRAMEBUFFER_OBJECT        },
++    {"GL_EXT_geometry_shader4",             EXT_GEOMETRY_SHADER4          },
+     {"GL_EXT_gpu_program_parameters",       EXT_GPU_PROGRAM_PARAMETERS    },
+     {"GL_EXT_gpu_shader4",                  EXT_GPU_SHADER4               },
+     {"GL_EXT_packed_depth_stencil",         EXT_PACKED_DEPTH_STENCIL      },
+@@ -2693,6 +2695,9 @@ static void load_gl_funcs(struct wined3d_gl_info *gl_info)
+     /* GL_APPLE_flush_buffer_range */
+     USE_GL_FUNC(glBufferParameteriAPPLE)
+     USE_GL_FUNC(glFlushMappedBufferRangeAPPLE)
++    /* GL_ARB_base_instance */
++    USE_GL_FUNC(glDrawArraysInstancedBaseInstance)
++    USE_GL_FUNC(glDrawElementsInstancedBaseVertexBaseInstance)
+     /* GL_ARB_blend_func_extended */
+     USE_GL_FUNC(glBindFragDataLocationIndexed)
+     USE_GL_FUNC(glGetFragDataIndex)
+diff --git a/dlls/wined3d/drawprim.c b/dlls/wined3d/drawprim.c
+index 1fde7ea2cb..a6289abf07 100644
+--- a/dlls/wined3d/drawprim.c
++++ b/dlls/wined3d/drawprim.c
+@@ -72,6 +72,23 @@ static void draw_primitive_arrays(struct wined3d_context *context, const struct
+         return;
+     }
+ 
++    if (gl_info->supported[ARB_BASE_INSTANCE] && start_instance)
++    {
++        if (!idx_size)
++        {
++            GL_EXTCALL(glDrawArraysInstancedBaseInstance(state->gl_primitive_type, start_idx, count,
++                    instance_count, start_instance));
++            checkGLcall("glDrawArraysInstancedBaseInstance");
++            return;
++        }
++
++        GL_EXTCALL(glDrawElementsInstancedBaseVertexBaseInstance(state->gl_primitive_type, count, idx_type,
++                    (const char *)idx_data + (idx_size * start_idx), instance_count, base_vertex_idx,
++                    start_instance));
++        checkGLcall("glDrawElementsInstancedBaseVertexBaseInstance");
++        return;
++    }
++
+     if (start_instance)
+         FIXME("Start instance (%u) not supported.\n", start_instance);
+ 
+diff --git a/dlls/wined3d/glsl_shader.c b/dlls/wined3d/glsl_shader.c
+index f491ed6c04..4b11fdefda 100644
+--- a/dlls/wined3d/glsl_shader.c
++++ b/dlls/wined3d/glsl_shader.c
+@@ -142,6 +142,7 @@ struct glsl_vs_program
+     GLint uniform_i_locations[WINED3D_MAX_CONSTS_I];
+     GLint uniform_b_locations[WINED3D_MAX_CONSTS_B];
+     GLint pos_fixup_location;
++    GLint base_vertex_location;
+ 
+     GLint modelview_matrix_location[MAX_VERTEX_BLENDS];
+     GLint projection_matrix_location;
+@@ -1736,6 +1737,12 @@ static void shader_glsl_load_constants(void *shader_priv, struct wined3d_context
+         checkGLcall("glUniform4fv");
+     }
+ 
++    if (update_mask & WINED3D_SHADER_CONST_BASE_VERTEX)
++    {
++        GL_EXTCALL(glUniform1i(prog->vs.base_vertex_location, state->base_vertex_index));
++        checkGLcall("glUniform1i");
++    }
++
+     if (update_mask & WINED3D_SHADER_CONST_FFP_MODELVIEW)
+     {
+         struct wined3d_matrix mat;
+@@ -2195,7 +2202,8 @@ static void shader_glsl_declare_generic_vertex_attribute(struct wined3d_string_b
+ 
+     if (e->sysval_semantic == WINED3D_SV_VERTEX_ID)
+     {
+-        shader_addline(buffer, "vec4 vs_in%u = vec4(intBitsToFloat(gl_VertexID), 0.0, 0.0, 0.0);\n",
++        shader_addline(buffer, "uniform int base_vertex;\n");
++        shader_addline(buffer, "vec4 vs_in%u = vec4(intBitsToFloat(gl_VertexID - base_vertex), 0.0, 0.0, 0.0);\n",
+                 index);
+         return;
+     }
+@@ -2396,6 +2404,8 @@ static void shader_generate_glsl_declarations(const struct wined3d_context *cont
+         switch (reg_maps->resource_info[entry->resource_idx].type)
+         {
+             case WINED3D_SHADER_RESOURCE_BUFFER:
++                if (shadow_sampler)
++                    FIXME("Unsupported Buffer shadow sampler.\n");
+                 sampler_type = "samplerBuffer";
+                 break;
+ 
+@@ -2695,6 +2705,7 @@ static void shader_glsl_get_register_name(const struct wined3d_shader_register *
+     const struct wined3d_shader_version *version = &reg_maps->shader_version;
+     const struct wined3d_gl_info *gl_info = ins->ctx->gl_info;
+     const char *prefix = shader_glsl_get_prefix(version->type);
++    struct shader_glsl_ctx_priv *priv = ins->ctx->backend_data;
+     struct glsl_src_param rel_param0, rel_param1;
+     char imm_str[4][17];
+ 
+@@ -2713,8 +2724,6 @@ static void shader_glsl_get_register_name(const struct wined3d_shader_register *
+         case WINED3DSPR_INPUT:
+             if (version->type == WINED3D_SHADER_TYPE_VERTEX)
+             {
+-                struct shader_glsl_ctx_priv *priv = ins->ctx->backend_data;
+-
+                 if (reg->idx[0].rel_addr)
+                     FIXME("VS3+ input registers relative addressing.\n");
+                 if (priv->cur_vs_args->swizzle_map & (1u << reg->idx[0].offset))
+@@ -2855,7 +2864,10 @@ static void shader_glsl_get_register_name(const struct wined3d_shader_register *
+                 WARN("Write to render target %u, only %d supported.\n",
+                         reg->idx[0].offset, gl_info->limits.buffers);
+ 
+-            sprintf(register_name, "%s[%u]", get_fragment_output(gl_info), reg->idx[0].offset);
++            if (version->type == WINED3D_SHADER_TYPE_PIXEL && priv->cur_ps_args->dual_source_blend)
++                sprintf(register_name, "dualFragData%u", reg->idx[0].offset);
++            else
++                sprintf(register_name, "%s[%u]", get_fragment_output(gl_info), reg->idx[0].offset);
+             break;
+ 
+         case WINED3DSPR_RASTOUT:
+@@ -3373,7 +3385,10 @@ static void shader_glsl_get_sample_function(const struct wined3d_shader_context
+             ERR("Unexpected flags %#x for texelFetch.\n", flags & ~texel_fetch_flags);
+ 
+         base = "texelFetch";
+-        type_part = "";
++        if (resource_type == WINED3D_SHADER_RESOURCE_BUFFER)
++            type_part = "Buffer";
++        else
++            type_part = "";
+     }
+ 
+     sample_function->name = string_buffer_get(priv->string_buffers);
+@@ -5713,11 +5728,21 @@ static void shader_glsl_ld(const struct wined3d_shader_instruction *ins)
+ 
+     shader_glsl_get_sample_function(ins->ctx, resource_idx, sampler_idx, flags, &sample_function);
+     shader_glsl_add_src_param(ins, &ins->src[0], sample_function.coord_mask, &coord_param);
+-    shader_glsl_add_src_param(ins, &ins->src[0], WINED3DSP_WRITEMASK_3, &lod_param);
+-    sampler_bind_idx = shader_glsl_find_sampler(&reg_maps->sampler_map, resource_idx, sampler_idx);
+-    shader_glsl_gen_sample_code(ins, sampler_bind_idx, &sample_function, ins->src[1].swizzle,
+-            NULL, NULL, has_lod_param ? lod_param.param_str : NULL, &ins->texel_offset,
+-            "%s", coord_param.param_str);
++    if (ins->ctx->reg_maps->resource_info[resource_idx].type == WINED3D_SHADER_RESOURCE_BUFFER)
++    {
++        /* texelFetchBuffer does not have a lod argument */
++        sampler_bind_idx = shader_glsl_find_sampler(&ins->ctx->reg_maps->sampler_map, resource_idx, sampler_idx);
++        shader_glsl_gen_sample_code(ins, sampler_bind_idx, &sample_function, ins->src[1].swizzle,
++                NULL, NULL, NULL, &ins->texel_offset, "%s", coord_param.param_str);
++    }
++    else
++    {
++        shader_glsl_add_src_param(ins, &ins->src[0], WINED3DSP_WRITEMASK_3, &lod_param);
++        sampler_bind_idx = shader_glsl_find_sampler(&reg_maps->sampler_map, resource_idx, sampler_idx);
++        shader_glsl_gen_sample_code(ins, sampler_bind_idx, &sample_function, ins->src[1].swizzle,
++                NULL, NULL, has_lod_param ? lod_param.param_str : NULL, &ins->texel_offset,
++                "%s", coord_param.param_str);
++    }
+     shader_glsl_release_sample_function(ins->ctx, &sample_function);
+ }
+ 
+@@ -6945,10 +6970,14 @@ static void shader_glsl_enable_extensions(struct wined3d_string_buffer *buffer,
+         shader_addline(buffer, "#extension GL_ARB_texture_query_levels : enable\n");
+     if (gl_info->supported[ARB_UNIFORM_BUFFER_OBJECT])
+         shader_addline(buffer, "#extension GL_ARB_uniform_buffer_object : enable\n");
++    if (gl_info->supported[EXT_GEOMETRY_SHADER4])
++        shader_addline(buffer, "#extension GL_EXT_geometry_shader4 : enable\n");
+     if (gl_info->supported[EXT_GPU_SHADER4])
+         shader_addline(buffer, "#extension GL_EXT_gpu_shader4 : enable\n");
+     if (gl_info->supported[EXT_TEXTURE_ARRAY])
+         shader_addline(buffer, "#extension GL_EXT_texture_array : enable\n");
++    if (gl_info->supported[ARB_TEXTURE_CUBE_MAP_ARRAY])
++        shader_addline(buffer, "#extension GL_ARB_texture_cube_map_array : enable\n");
+ }
+ 
+ static void shader_glsl_generate_ps_epilogue(const struct wined3d_gl_info *gl_info,
+@@ -7084,6 +7113,12 @@ static GLuint shader_glsl_generate_pshader(const struct wined3d_context *context
+         if (args->vp_mode == vertexshader)
+             shader_glsl_declare_shader_inputs(gl_info, buffer, in_count);
+         shader_addline(buffer, "vec4 %s_in[%u];\n", prefix, in_count);
++
++        if (args->dual_source_blend)
++        {
++            shader_addline(buffer, "varying out vec4 dualFragData0;\n");
++            shader_addline(buffer, "varying out vec4 dualFragData1;\n");
++        }
+     }
+ 
+     for (i = 0, map = reg_maps->bumpmat; map; map >>= 1, ++i)
+@@ -8864,6 +8899,7 @@ static void shader_glsl_init_vs_uniform_locations(const struct wined3d_gl_info *
+     }
+ 
+     vs->pos_fixup_location = GL_EXTCALL(glGetUniformLocation(program_id, "pos_fixup"));
++    vs->base_vertex_location = GL_EXTCALL(glGetUniformLocation(program_id, "base_vertex"));
+ 
+     for (i = 0; i < MAX_VERTEX_BLENDS; ++i)
+     {
+@@ -9312,6 +9348,14 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
+         GL_EXTCALL(glAttachShader(program_id, ps_id));
+         checkGLcall("glAttachShader");
+ 
++        if (state_is_dual_source_blend(state))
++        {
++            GL_EXTCALL(glBindFragDataLocationIndexed(program_id, 0, 0, "dualFragData0"));
++            checkGLcall("glBindFragDataLocationIndexed");
++            GL_EXTCALL(glBindFragDataLocationIndexed(program_id, 0, 1, "dualFragData1"));
++            checkGLcall("glBindFragDataLocationIndexed");
++        }
++
+         list_add_head(ps_list, &entry->ps.shader_entry);
+     }
+ 
+@@ -9362,6 +9406,8 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
+             entry->constant_update_mask |= WINED3D_SHADER_CONST_VS_B;
+         if (entry->vs.pos_fixup_location != -1)
+             entry->constant_update_mask |= WINED3D_SHADER_CONST_POS_FIXUP;
++        if (entry->vs.base_vertex_location != -1)
++            entry->constant_update_mask |= WINED3D_SHADER_CONST_BASE_VERTEX;
+ 
+         shader_glsl_load_program_resources(context, priv, program_id, vshader);
+     }
+diff --git a/dlls/wined3d/shader.c b/dlls/wined3d/shader.c
+index 5717767419..4bf1dcccbb 100644
+--- a/dlls/wined3d/shader.c
++++ b/dlls/wined3d/shader.c
+@@ -1012,6 +1012,16 @@ static HRESULT shader_get_registers_used(struct wined3d_shader *shader, const st
+                     break;
+             }
+         }
++        else if (ins.handler_idx == WINED3DSIH_DCL_INPUT_PS)
++        {
++            unsigned int reg_idx = ins.declaration.dst.reg.idx[0].offset;
++            reg_maps->input_registers |= 1u << reg_idx;
++            if (shader_version.type == WINED3D_SHADER_TYPE_PIXEL)
++                shader->u.ps.interpolation_mode[reg_idx] = ins.flags;
++            else
++                FIXME("Invalid instruction %#x for shader type %#x.\n",
++                        ins.handler_idx, shader_version.type);
++        }
+         else if (ins.handler_idx == WINED3DSIH_DCL_CONSTANT_BUFFER)
+         {
+             struct wined3d_shader_register *reg = &ins.declaration.src.reg;
+@@ -3193,6 +3203,8 @@ HRESULT CDECL wined3d_shader_set_local_constants_float(struct wined3d_shader *sh
+ void find_vs_compile_args(const struct wined3d_state *state, const struct wined3d_shader *shader,
+         WORD swizzle_map, struct vs_compile_args *args, const struct wined3d_d3d_info *d3d_info)
+ {
++    unsigned int i;
++
+     args->fog_src = state->render_states[WINED3D_RS_FOGTABLEMODE]
+             == WINED3D_FOG_NONE ? VS_FOG_COORD : VS_FOG_Z;
+     args->clip_enabled = state->render_states[WINED3D_RS_CLIPPING]
+@@ -3216,6 +3228,12 @@ void find_vs_compile_args(const struct wined3d_state *state, const struct wined3
+         args->flatshading = state->render_states[WINED3D_RS_SHADEMODE] == WINED3D_SHADE_FLAT;
+     else
+         args->flatshading = 0;
++
++    for (i = 0; i < args->next_shader_input_count; i++)
++    {
++        args->interpolation_mode[i] = state->shader[WINED3D_SHADER_TYPE_PIXEL]
++                ? state->shader[WINED3D_SHADER_TYPE_PIXEL]->u.ps.interpolation_mode[i] : 0;
++    }
+ }
+ 
+ static BOOL match_usage(BYTE usage1, BYTE usage_idx1, BYTE usage2, BYTE usage_idx2)
+@@ -3485,8 +3503,14 @@ static HRESULT geometry_shader_init(struct wined3d_shader *shader, struct wined3
+ void find_gs_compile_args(const struct wined3d_state *state, const struct wined3d_shader *shader,
+         struct gs_compile_args *args)
+ {
++    unsigned int i;
+     args->output_count = state->shader[WINED3D_SHADER_TYPE_PIXEL]
+             ? state->shader[WINED3D_SHADER_TYPE_PIXEL]->limits->packed_input : shader->limits->packed_output;
++    for (i = 0; i < args->output_count; i++)
++    {
++        args->interpolation_mode[i] = state->shader[WINED3D_SHADER_TYPE_PIXEL]
++                ? state->shader[WINED3D_SHADER_TYPE_PIXEL]->u.ps.interpolation_mode[i] : 0;
++    }
+ }
+ 
+ void find_ps_compile_args(const struct wined3d_state *state, const struct wined3d_shader *shader,
+@@ -3721,6 +3745,8 @@ void find_ps_compile_args(const struct wined3d_state *state, const struct wined3
+ 
+     args->render_offscreen = shader->reg_maps.vpos && gl_info->supported[ARB_FRAGMENT_COORD_CONVENTIONS]
+             ? context->render_offscreen : 0;
++
++    args->dual_source_blend = state_is_dual_source_blend(state);
+ }
+ 
+ static HRESULT pixel_shader_init(struct wined3d_shader *shader, struct wined3d_device *device,
+diff --git a/dlls/wined3d/state.c b/dlls/wined3d/state.c
+index 58e9d8f59b..05665a16ab 100644
+--- a/dlls/wined3d/state.c
++++ b/dlls/wined3d/state.c
+@@ -4614,11 +4614,6 @@ static void viewport_miscpart(struct wined3d_context *context, const struct wine
+ 
+     if (target)
+     {
+-        if (vp.width > target->width)
+-            vp.width = target->width;
+-        if (vp.height > target->height)
+-            vp.height = target->height;
+-
+         wined3d_rendertarget_view_get_drawable_size(target, context, &width, &height);
+     }
+     else if (depth_stencil)
+@@ -4660,11 +4655,6 @@ static void viewport_miscpart_cc(struct wined3d_context *context,
+ 
+     if (target)
+     {
+-        if (vp.width > target->width)
+-            vp.width = target->width;
+-        if (vp.height > target->height)
+-            vp.height = target->height;
+-
+         wined3d_rendertarget_view_get_drawable_size(target, context, &width, &height);
+     }
+     else if (depth_stencil)
+@@ -4958,6 +4948,11 @@ static void state_cb_warn(struct wined3d_context *context, const struct wined3d_
+     WARN("Constant buffers (%s) no supported.\n", debug_d3dstate(state_id));
+ }
+ 
++static void state_basevertex(struct wined3d_context *context, const struct wined3d_state *state, DWORD state_id)
++{
++    context->constant_update_mask |= WINED3D_SHADER_CONST_BASE_VERTEX;
++}
++
+ static void state_shader_resource_binding(struct wined3d_context *context,
+         const struct wined3d_state *state, DWORD state_id)
+ {
+@@ -5235,7 +5230,7 @@ const struct StateEntryTemplate misc_state_template[] =
+     { STATE_SAMPLER(17), /* Vertex sampler 1 */           { STATE_SAMPLER(17),                                  sampler             }, WINED3D_GL_EXT_NONE             },
+     { STATE_SAMPLER(18), /* Vertex sampler 2 */           { STATE_SAMPLER(18),                                  sampler             }, WINED3D_GL_EXT_NONE             },
+     { STATE_SAMPLER(19), /* Vertex sampler 3 */           { STATE_SAMPLER(19),                                  sampler             }, WINED3D_GL_EXT_NONE             },
+-    { STATE_BASEVERTEXINDEX,                              { STATE_BASEVERTEXINDEX,                              state_nop,          }, ARB_DRAW_ELEMENTS_BASE_VERTEX   },
++    { STATE_BASEVERTEXINDEX,                              { STATE_BASEVERTEXINDEX,                              state_basevertex,   }, ARB_DRAW_ELEMENTS_BASE_VERTEX   },
+     { STATE_BASEVERTEXINDEX,                              { STATE_STREAMSRC,                                    NULL,               }, WINED3D_GL_EXT_NONE             },
+     { STATE_FRAMEBUFFER,                                  { STATE_FRAMEBUFFER,                                  context_state_fb    }, WINED3D_GL_EXT_NONE             },
+     { STATE_SHADER(WINED3D_SHADER_TYPE_PIXEL),            { STATE_SHADER(WINED3D_SHADER_TYPE_PIXEL),            context_state_drawbuf},WINED3D_GL_EXT_NONE             },
+diff --git a/dlls/wined3d/texture.c b/dlls/wined3d/texture.c
+index 5e023de682..7ecbdee8d6 100644
+--- a/dlls/wined3d/texture.c
++++ b/dlls/wined3d/texture.c
+@@ -3168,8 +3168,9 @@ static HRESULT volumetexture_init(struct wined3d_texture *texture, const struct
+         const struct wined3d_parent_ops *parent_ops)
+ {
+     struct wined3d_device_parent *device_parent = device->device_parent;
++    struct wined3d_surface *surfaces;
+     const struct wined3d_gl_info *gl_info = &device->adapter->gl_info;
+-    unsigned int i;
++    unsigned int i, j, depth = desc->depth;
+     HRESULT hr;
+ 
+     if (layer_count != 1)
+@@ -3251,26 +3252,52 @@ static HRESULT volumetexture_init(struct wined3d_texture *texture, const struct
+         texture->resource.map_binding = WINED3D_LOCATION_BUFFER;
+     }
+ 
++    if (level_count > ~(SIZE_T)0 / depth
++            || !(surfaces = wined3d_calloc(level_count * depth, sizeof(*surfaces))))
++    {
++        wined3d_texture_cleanup_sync(texture);
++        return E_OUTOFMEMORY;
++    }
++
+     /* Generate all the surfaces. */
+     for (i = 0; i < texture->level_count; ++i)
+     {
+-        struct wined3d_texture_sub_resource *sub_resource;
++        for (j = 0; j < depth; ++j)
++        {
++            struct wined3d_texture_sub_resource *sub_resource;
++            unsigned int idx = j * texture->level_count + i;
++            struct wined3d_surface *surface;
+ 
+-        sub_resource = &texture->sub_resources[i];
+-        sub_resource->locations = WINED3D_LOCATION_DISCARDED;
++            surface = &surfaces[idx];
++            surface->container = texture;
++            surface->texture_target = texture->target;
++            surface->texture_level = i;
++            surface->texture_layer = j;
++            list_init(&surface->renderbuffers);
++            list_init(&surface->overlays);
+ 
+-        if (FAILED(hr = device_parent->ops->volume_created(device_parent,
+-                texture, i, &sub_resource->parent, &sub_resource->parent_ops)))
+-        {
+-            WARN("Failed to create volume parent, hr %#x.\n", hr);
+-            sub_resource->parent = NULL;
+-            wined3d_texture_cleanup_sync(texture);
+-            return hr;
+-        }
++            sub_resource = &texture->sub_resources[idx];
++            sub_resource->locations = WINED3D_LOCATION_DISCARDED;
++            sub_resource->u.surface = surface;
++            if (!(texture->resource.usage & WINED3DUSAGE_DEPTHSTENCIL))
++            {
++                wined3d_texture_validate_location(texture, idx, WINED3D_LOCATION_SYSMEM);
++                wined3d_texture_invalidate_location(texture, idx, ~WINED3D_LOCATION_SYSMEM);
++            }
+ 
+-        TRACE("parent %p, parent_ops %p.\n", parent, parent_ops);
++            if (FAILED(hr = device_parent->ops->surface_created(device_parent,
++                    texture, idx, &sub_resource->parent, &sub_resource->parent_ops)))
++            {
++                WARN("Failed to create surface parent, hr %#x.\n", hr);
++                sub_resource->parent = NULL;
++                wined3d_texture_cleanup_sync(texture);
++                return hr;
++            }
+ 
+-        TRACE("Created volume level %u.\n", i);
++            TRACE("parent %p, parent_ops %p.\n", sub_resource->parent, sub_resource->parent_ops);
++
++            TRACE("Created 3D surface level %u, layer %u @ %p.\n", i, j, surface);
++        }
+     }
+ 
+     return WINED3D_OK;
+@@ -3528,6 +3555,7 @@ HRESULT CDECL wined3d_texture_create(struct wined3d_device *device, const struct
+         void *parent, const struct wined3d_parent_ops *parent_ops, struct wined3d_texture **texture)
+ {
+     struct wined3d_texture *object;
++    unsigned int depth_or_layer_count;
+     HRESULT hr;
+ 
+     TRACE("device %p, desc %p, layer_count %u, level_count %u, flags %#x, data %p, "
+@@ -3573,8 +3601,13 @@ HRESULT CDECL wined3d_texture_create(struct wined3d_device *device, const struct
+         }
+     }
+ 
++    if (desc->resource_type == WINED3D_RTYPE_TEXTURE_3D)
++        depth_or_layer_count = desc->depth;
++    else
++        depth_or_layer_count = layer_count;
++
+     if (!(object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+-            FIELD_OFFSET(struct wined3d_texture, sub_resources[level_count * layer_count]))))
++            FIELD_OFFSET(struct wined3d_texture, sub_resources[level_count * depth_or_layer_count]))))
+         return E_OUTOFMEMORY;
+ 
+     switch (desc->resource_type)
+diff --git a/dlls/wined3d/utils.c b/dlls/wined3d/utils.c
+index 0df9060da7..bbb1989a99 100644
+--- a/dlls/wined3d/utils.c
++++ b/dlls/wined3d/utils.c
+@@ -1897,7 +1897,7 @@ static GLenum wined3d_gl_type_to_enum(enum wined3d_gl_resource_type type)
+         case WINED3D_GL_RES_TYPE_TEX_RECT:
+             return GL_TEXTURE_RECTANGLE_ARB;
+         case WINED3D_GL_RES_TYPE_BUFFER:
+-            return GL_TEXTURE_2D; /* TODO: GL_TEXTURE_BUFFER. */
++            return GL_TEXTURE_BUFFER;
+         case WINED3D_GL_RES_TYPE_RB:
+             return GL_RENDERBUFFER;
+         case WINED3D_GL_RES_TYPE_COUNT:
+diff --git a/dlls/wined3d/view.c b/dlls/wined3d/view.c
+index d315a77749..056850d2bd 100644
+--- a/dlls/wined3d/view.c
++++ b/dlls/wined3d/view.c
+@@ -557,8 +557,7 @@ static HRESULT wined3d_rendertarget_view_init(struct wined3d_rendertarget_view *
+         struct wined3d_texture *texture = texture_from_resource(resource);
+ 
+         view->sub_resource_idx = desc->u.texture.level_idx;
+-        if (resource->type != WINED3D_RTYPE_TEXTURE_3D)
+-            view->sub_resource_idx += desc->u.texture.layer_idx * texture->level_count;
++        view->sub_resource_idx += desc->u.texture.layer_idx * texture->level_count;
+         view->layer_count = desc->u.texture.layer_count;
+         view->width = wined3d_texture_get_level_width(texture, desc->u.texture.level_idx);
+         view->height = wined3d_texture_get_level_height(texture, desc->u.texture.level_idx);
+diff --git a/dlls/wined3d/wined3d_gl.h b/dlls/wined3d/wined3d_gl.h
+index f60f8021c2..f511632fd1 100644
+--- a/dlls/wined3d/wined3d_gl.h
++++ b/dlls/wined3d/wined3d_gl.h
+@@ -43,6 +43,7 @@ enum wined3d_gl_extension
+     APPLE_FLUSH_BUFFER_RANGE,
+     APPLE_YCBCR_422,
+     /* ARB */
++    ARB_BASE_INSTANCE,
+     ARB_BLEND_FUNC_EXTENDED,
+     ARB_CLEAR_BUFFER_OBJECT,
+     ARB_CLEAR_TEXTURE,
+@@ -148,6 +149,7 @@ enum wined3d_gl_extension
+     EXT_FRAMEBUFFER_BLIT,
+     EXT_FRAMEBUFFER_MULTISAMPLE,
+     EXT_FRAMEBUFFER_OBJECT,
++    EXT_GEOMETRY_SHADER4,
+     EXT_GPU_PROGRAM_PARAMETERS,
+     EXT_GPU_SHADER4,
+     EXT_PACKED_DEPTH_STENCIL,
+diff --git a/dlls/wined3d/wined3d_private.h b/dlls/wined3d/wined3d_private.h
+index b699f18307..cd285bf6de 100644
+--- a/dlls/wined3d/wined3d_private.h
++++ b/dlls/wined3d/wined3d_private.h
+@@ -260,9 +260,10 @@ static inline enum complex_fixup get_complex_fixup(struct color_fixup_desc fixup
+ /* Device caps */
+ #define MAX_STREAMS                 16
+ #define MAX_TEXTURES                8
+-#define MAX_FRAGMENT_SAMPLERS       16
+-#define MAX_VERTEX_SAMPLERS         4
+-#define MAX_COMBINED_SAMPLERS       (MAX_FRAGMENT_SAMPLERS + MAX_VERTEX_SAMPLERS)
++#define MAX_FRAGMENT_SAMPLERS       32
++#define MAX_GEOMETRY_SAMPLERS       16
++#define MAX_VERTEX_SAMPLERS         32
++#define MAX_COMBINED_SAMPLERS       (MAX_FRAGMENT_SAMPLERS + MAX_GEOMETRY_SAMPLERS + MAX_VERTEX_SAMPLERS)
+ #define MAX_ACTIVE_LIGHTS           8
+ #define MAX_CLIP_DISTANCES          WINED3DMAXUSERCLIPPLANES
+ #define MAX_CONSTANT_BUFFERS        15
+@@ -439,6 +440,7 @@ enum wined3d_shader_resource_type
+ #define WINED3D_SHADER_CONST_FFP_LIGHTS      0x00080000
+ #define WINED3D_SHADER_CONST_FFP_PS          0x00100000
+ #define WINED3D_SHADER_CONST_FFP_COLOR_KEY   0x00200000
++#define WINED3D_SHADER_CONST_BASE_VERTEX     0x00400000
+ 
+ enum wined3d_shader_register_type
+ {
+@@ -1301,7 +1303,8 @@ struct ps_compile_args {
+     DWORD flatshading : 1;
+     DWORD alpha_test_func : 3;
+     DWORD render_offscreen : 1;
+-    DWORD padding : 26;
++    DWORD dual_source_blend : 1;
++    DWORD padding : 25;
+ };
+ 
+ enum fog_src_type {
+@@ -1320,11 +1323,13 @@ struct vs_compile_args
+     BYTE padding : 1;
+     WORD swizzle_map;   /* MAX_ATTRIBS, 16 */
+     unsigned int next_shader_input_count;
++    enum wined3d_shader_interpolation_mode interpolation_mode[MAX_REG_INPUT];
+ };
+ 
+ struct gs_compile_args
+ {
+     unsigned int output_count;
++    enum wined3d_shader_interpolation_mode interpolation_mode[MAX_REG_INPUT];
+ };
+ 
+ struct wined3d_context;
+@@ -3501,8 +3506,14 @@ static inline struct wined3d_surface *wined3d_rendertarget_view_get_surface(
+ {
+     struct wined3d_texture *texture;
+ 
+-    if (!view || view->resource->type != WINED3D_RTYPE_TEXTURE_2D)
++    if (!view || (view->resource->type != WINED3D_RTYPE_TEXTURE_2D &&
++            view->resource->type != WINED3D_RTYPE_TEXTURE_3D &&
++            view->resource->type != WINED3D_RTYPE_TEXTURE_1D))
++    {
++        if (view)
++            DPRINTF("wined3d_rendertarget_view_get_surface: view->resource->type %d != WINED3D_RTYPE_TEXTURE_2D\n", view->resource->type);
+         return NULL;
++    }
+ 
+     texture = texture_from_resource(view->resource);
+ 
+@@ -3674,6 +3685,20 @@ void state_pointsprite(struct wined3d_context *context,
+         const struct wined3d_state *state, DWORD state_id) DECLSPEC_HIDDEN;
+ void state_shademode(struct wined3d_context *context,
+         const struct wined3d_state *state, DWORD state_id) DECLSPEC_HIDDEN;
++static inline BOOL state_is_dual_source_blend(const struct wined3d_state *state)
++{
++#define IS_DUAL_SOURCE_BLEND(x) ((x) >= WINED3D_BLEND_SRC1COLOR && (x) <= WINED3D_BLEND_INVSRC1ALPHA)
++    if (state->render_states[WINED3D_RS_ALPHABLENDENABLE] &&
++            (IS_DUAL_SOURCE_BLEND(state->render_states[WINED3D_RS_SRCBLENDALPHA]) ||
++             IS_DUAL_SOURCE_BLEND(state->render_states[WINED3D_RS_DESTBLENDALPHA])))
++    {
++        return TRUE;
++    }
++
++    return IS_DUAL_SOURCE_BLEND(state->render_states[WINED3D_RS_SRCBLEND]) ||
++            IS_DUAL_SOURCE_BLEND(state->render_states[WINED3D_RS_DESTBLEND]);
++#undef IS_DUAL_SOURCE_BLEND
++}
+ 
+ GLenum gl_primitive_type_from_d3d(enum wined3d_primitive_type primitive_type) DECLSPEC_HIDDEN;
+ 
+@@ -3745,6 +3770,7 @@ struct wined3d_pixel_shader
+     /* Pixel shader input semantics */
+     DWORD input_reg_map[MAX_REG_INPUT];
+     DWORD input_reg_used; /* MAX_REG_INPUT, 32 */
++    enum wined3d_shader_interpolation_mode interpolation_mode[MAX_REG_INPUT];
+     unsigned int declared_in_count;
+ 
+     /* Some information about the shader behavior */
+@@ -4066,6 +4092,11 @@ static inline BOOL use_ps(const struct wined3d_state *state)
+     return !!state->shader[WINED3D_SHADER_TYPE_PIXEL];
+ }
+ 
++static inline BOOL use_gs(const struct wined3d_state *state)
++{
++    return !!state->shader[WINED3D_SHADER_TYPE_GEOMETRY];
++}
++
+ static inline void context_apply_state(struct wined3d_context *context,
+         const struct wined3d_state *state, DWORD state_id)
+ {
+diff --git a/tools/makedep.c b/tools/makedep.c
+index e28c3eee9b..d11d1d9f15 100644
+--- a/tools/makedep.c
++++ b/tools/makedep.c
+@@ -2818,7 +2818,33 @@ static struct strarray output_sources( const struct makefile *make )
+                               strmake( "p$(dlldir)/%s%s", make->module, dll_ext ));
+             add_install_rule( make, install_rules, make->module, strmake( "%s.fake", make->module ),
+                               strmake( "d$(fakedlldir)/%s", make->module ));
+-            output( "%s%s %s.fake:", module_path, dll_ext, module_path );
++
++            output( "%s.fake: %s%s", module_path, module_path, dll_ext );
++            if (spec_file) output_filename( spec_file );
++            output_filenames_obj_dir( make, object_files );
++            output_filenames_obj_dir( make, res_files );
++            output_filenames( dep_libs );
++            output_filename( tools_path( make, "winebuild" ));
++            output_filename( tools_path( make, "winegcc" ));
++            output( "\n" );
++            output( "\t%s -o $@", tools_path( make, "winegcc" ));
++            output_filename( strmake( "-B%s", tools_dir_path( make, "winebuild" )));
++            if (tools_dir) output_filename( strmake( "--sysroot=%s", top_obj_dir_path( make, "" )));
++            output_filenames( target_flags );
++            output_filenames( unwind_flags );
++            if (spec_file)
++            {
++                output( " -shared %s", spec_file );
++                output_filenames( make->extradllflags );
++            }
++            else output_filenames( make->appmode );
++            output_filenames_obj_dir( make, object_files );
++            output_filenames_obj_dir( make, res_files );
++            output_filenames( all_libs );
++            output_filename( "$(LDFLAGS)" );
++            output( "\n" );
++
++            output( "%s%s:", module_path, dll_ext );
+         }
+         else
+         {
+diff --git a/tools/winebuild/build.h b/tools/winebuild/build.h
+index e76800bb5d..7653c28ed6 100644
+--- a/tools/winebuild/build.h
++++ b/tools/winebuild/build.h
+@@ -298,7 +298,7 @@ extern void output_exports( DLLSPEC *spec );
+ extern int load_res32_file( const char *name, DLLSPEC *spec );
+ extern void output_resources( DLLSPEC *spec );
+ extern void output_bin_resources( DLLSPEC *spec, unsigned int start_rva );
+-extern void output_fake_module( DLLSPEC *spec );
++extern void output_fake_module( DLLSPEC *spec, const char *native );
+ extern void output_def_file( DLLSPEC *spec, int include_private );
+ extern void load_res16_file( const char *name, DLLSPEC *spec );
+ extern void output_res16_data( DLLSPEC *spec );
+@@ -362,6 +362,7 @@ extern int verbose;
+ extern int link_ext_symbols;
+ extern int force_pointer_size;
+ extern int unwind_tables;
++extern unsigned long image_base;
+ 
+ extern char *input_file_name;
+ extern char *spec_file_name;
+diff --git a/tools/winebuild/main.c b/tools/winebuild/main.c
+index 09ebb348bb..353b17857c 100644
+--- a/tools/winebuild/main.c
++++ b/tools/winebuild/main.c
+@@ -80,7 +80,9 @@ char *spec_file_name = NULL;
+ FILE *output_file = NULL;
+ const char *output_file_name = NULL;
+ static const char *output_file_source_name;
++unsigned long image_base = 0;
+ static int fake_module;
++static const char *fake_native;
+ 
+ struct strarray lib_path = { 0 };
+ struct strarray as_command = { 0 };
+@@ -260,9 +262,11 @@ static const char usage_str[] =
+ "   -f FLAGS                  Compiler flags (-fPIC and -fasynchronous-unwind-tables are supported)\n"
+ "   -F, --filename=DLLFILE    Set the DLL filename (default: from input file name)\n"
+ "       --fake-module         Create a fake binary module\n"
++"       --fake-native=DLLFILE Set the native DLL filename for a fake binary module\n"
+ "   -h, --help                Display this help message\n"
+ "   -H, --heap=SIZE           Set the heap size for a Win16 dll\n"
+ "   -I DIR                    Ignored for C flags compatibility\n"
++"       --image-base=ADDRESS  Set the DLL base address\n"
+ "   -k, --kill-at             Kill stdcall decorations in generated .def files\n"
+ "   -K, FLAGS                 Compiler flags (only -KPIC is supported)\n"
+ "       --large-address-aware Support an address space larger than 2Gb\n"
+@@ -300,6 +304,8 @@ enum long_options_values
+     LONG_OPT_CCCMD,
+     LONG_OPT_EXTERNAL_SYMS,
+     LONG_OPT_FAKE_MODULE,
++    LONG_OPT_FAKE_NATIVE,
++    LONG_OPT_IMAGE_BASE,
+     LONG_OPT_LARGE_ADDRESS_AWARE,
+     LONG_OPT_LDCMD,
+     LONG_OPT_NMCMD,
+@@ -322,6 +328,8 @@ static const struct option long_options[] =
+     { "cc-cmd",        1, 0, LONG_OPT_CCCMD },
+     { "external-symbols", 0, 0, LONG_OPT_EXTERNAL_SYMS },
+     { "fake-module",   0, 0, LONG_OPT_FAKE_MODULE },
++    { "fake-native",   1, 0, LONG_OPT_FAKE_NATIVE },
++    { "image-base",    1, 0, LONG_OPT_IMAGE_BASE },
+     { "large-address-aware", 0, 0, LONG_OPT_LARGE_ADDRESS_AWARE },
+     { "ld-cmd",        1, 0, LONG_OPT_LDCMD },
+     { "nm-cmd",        1, 0, LONG_OPT_NMCMD },
+@@ -496,6 +504,12 @@ static char **parse_options( int argc, char **argv, DLLSPEC *spec )
+         case LONG_OPT_FAKE_MODULE:
+             fake_module = 1;
+             break;
++        case LONG_OPT_FAKE_NATIVE:
++            fake_native = xstrdup( optarg );
++            break;
++        case LONG_OPT_IMAGE_BASE:
++            image_base = strtoul( optarg, NULL, 0 );
++            break;
+         case LONG_OPT_EXTERNAL_SYMS:
+             link_ext_symbols = 1;
+             break;
+@@ -644,7 +658,7 @@ int main(int argc, char **argv)
+         if (fake_module)
+         {
+             if (spec->type == SPEC_WIN16) output_fake_module16( spec );
+-            else output_fake_module( spec );
++            else output_fake_module( spec, fake_native );
+             break;
+         }
+         read_undef_symbols( spec, argv );
+diff --git a/tools/winebuild/spec32.c b/tools/winebuild/spec32.c
+index f0246a3203..d7a59c5c41 100644
+--- a/tools/winebuild/spec32.c
++++ b/tools/winebuild/spec32.c
+@@ -46,8 +46,184 @@
+ #define IMAGE_NT_OPTIONAL_HDR64_MAGIC 0x20b
+ #define IMAGE_ROM_OPTIONAL_HDR_MAGIC  0x107
+ 
++struct export_func
++{
++    const char     *name;
++    unsigned int    name_rva;
++    int             ordinal;
++    unsigned int    va;
++};
++
++struct export
++{
++    struct export_func *exports;
++    int                 nb_exports;
++    int                 max_exports;
++};
++
+ int needs_get_pc_thunk = 0;
+ 
++static inline int needs_syscalls( DLLSPEC *spec )
++{
++    return (target_cpu == CPU_x86_64) &&
++           spec->dll_name && strcmp(spec->dll_name, "ntdll") == 0;
++}
++
++static void add_export_func( struct export *exp, const char *name, int ordinal, unsigned int va )
++{
++    if (exp->nb_exports == exp->max_exports)
++    {
++        exp->max_exports *= 2;
++        if (exp->max_exports < 32) exp->max_exports = 32;
++        exp->exports = xrealloc( exp->exports, exp->max_exports * sizeof(*exp->exports) );
++    }
++    exp->exports[exp->nb_exports].name = name;
++    exp->exports[exp->nb_exports].name_rva = 0;
++    exp->exports[exp->nb_exports].ordinal = ordinal;
++    exp->exports[exp->nb_exports].va = va;
++    exp->nb_exports++;
++}
++
++static struct export *parse_syscall_exports( const char *name )
++{
++    FILE *f;
++    int err, ordinal = 0;
++    const char *prefix = "__wine_spec_syscall_";
++    size_t prefix_len = strlen( prefix );
++    const char *prog = get_nm_command();
++    char *cmd, buffer[1024];
++    struct export *export;
++
++    export = xmalloc( sizeof(*export) );
++    memset( export, 0, sizeof(*export) );
++
++    cmd = strmake( "%s -P -t x %s", prog, name );
++    if (!(f = popen( cmd, "r" )))
++        fatal_error( "Cannot execute '%s'\n", cmd );
++
++    while (fgets( buffer, sizeof(buffer), f ))
++    {
++        char *name;
++        char *p = buffer + strlen(buffer) - 1;
++        unsigned long va;
++        if (p < buffer) continue;
++        if (*p == '\n') *p-- = 0;
++        p = name = buffer;
++        while (*p && *p != ' ') p++;
++        if (*p == 0) continue;
++        *p++ = 0;
++        if (p[0] != 't' || p[1] != ' ') continue;
++        p += 2;
++        va = strtoul( p, NULL, 16 );
++        if (strncmp( name, prefix, prefix_len ) == 0)
++            add_export_func( export, xstrdup(name + prefix_len), ordinal++, va );
++    }
++    if ((err = pclose( f ))) warning( "%s failed with status %d\n", cmd, err );
++    free( cmd );
++
++    return export;
++}
++
++static void output_text_section( DLLSPEC *spec, unsigned int rva, const char *native )
++{
++    static const unsigned char dll_code_section[] = { 0x31, 0xc0,          /* xor %eax,%eax */
++                                                      0xc2, 0x0c, 0x00 };  /* ret $12 */
++
++    static const unsigned char exe_code_section[] = { 0xb8, 0x01, 0x00, 0x00, 0x00,  /* movl $1,%eax */
++                                                      0xc2, 0x04, 0x00 };            /* ret $4 */
++
++    static const unsigned char prefix[] = { 0x0f, 0x1f, 0x44, 0x00, 0x00, /* nop */
++                                            0x68 };                       /* push ... */
++
++    int i;
++    struct export *exp;
++
++    /* attempted to migrate this code to the new multi pass label system ~ gamax92 */
++
++    if (spec->characteristics & IMAGE_FILE_DLL)
++        put_data( dll_code_section, sizeof(dll_code_section) );
++    else
++        put_data( exe_code_section, sizeof(exe_code_section) );
++
++    if (native == NULL)
++        return;
++
++    exp = parse_syscall_exports( native );
++
++    /* export directory header */
++
++    align_output_rva( 32, 32 );
++    put_label( "export_start" );
++    put_dword( 0 ); /* Characteristics */
++    put_dword( 0 ); /* TimeDateStamp */
++    put_dword( 0 ); /* MajorVersion/MinorVersion */
++    put_dword( label_rva("dll_name") ); /* Name */
++    put_dword( 0 ); /* Base */
++    put_dword( exp->nb_exports ); /* NumberOfFunctions */
++    put_dword( exp->nb_exports ); /* NumberOfNames */
++    put_dword( label_rva("export_funcs") ); /* AddressOfFunctions */
++    put_dword( label_rva("export_names") ); /* AddressOfNames */
++    put_dword( label_rva("export_ordinals") ); /* AddressOfNameOrdinals */
++
++    /* function pointers */
++
++    align_output_rva( 4, 4 );
++    put_label( "export_funcs" );
++    for (i = 0; i < exp->nb_exports; i++)
++        put_dword( exp->exports[i].va - image_base );
++
++    /* names */
++
++    put_label( "dll_name" );
++    put_str( spec->file_name );
++    for (i = 0; i < exp->nb_exports; i++)
++    {
++        struct export_func *e = &exp->exports[i];
++        e->name_rva = output_buffer_rva;
++        put_str( e->name );
++    }
++
++    /* name ptrs */
++
++    align_output_rva( 4, 4 );
++    put_label( "export_names" );
++    for (i = 0; i < exp->nb_exports; i++)
++        put_dword( exp->exports[i].name_rva );
++
++    /* ordinals */
++
++    align_output_rva( 4, 4 );
++    put_label( "export_ordinals" );
++    for (i = 0; i < exp->nb_exports; i++)
++        put_word( exp->exports[i].ordinal );
++    align_output_rva( 4, 4 );
++
++    put_label( "export_end" );
++
++    /* fake code */
++
++    for (i = 0; i < exp->nb_exports; i++)
++    {
++        struct export_func *e = &exp->exports[i];
++        unsigned int offset = e->va - image_base - rva + label_pos("text_start");
++
++        if (offset + 16 > output_buffer_size)
++        {
++            output_buffer_size = offset + 16;
++            output_buffer = xrealloc( output_buffer, output_buffer_size );
++        }
++
++        output_buffer_pos = offset;
++        put_data( prefix, sizeof(prefix) );
++        put_dword( e->va );
++        put_byte( 0xc3 ); /* ret */
++    }
++
++	/* correct output_buffer_rva */
++
++	output_buffer_rva = output_buffer_pos - label_pos("text_start") + label_rva("text_start");
++}
++
+ /* check if entry point needs a relay thunk */
+ static inline int needs_relay( const ORDDEF *odp )
+ {
+@@ -399,6 +575,11 @@ void output_exports( DLLSPEC *spec )
+                 output( "\t%s %s_%s\n",
+                          get_asm_ptr_keyword(), asm_name("__wine_spec_ext_link"), odp->link_name );
+             }
++            else if (needs_syscalls(spec) && odp->type != TYPE_EXTERN)
++            {
++                /* system calls */
++                output( "\t%s __wine_spec_syscall_%s\n", get_asm_ptr_keyword(), odp->name );
++            }
+             else
+             {
+                 output( "\t%s %s\n", get_asm_ptr_keyword(), asm_name(odp->link_name) );
+@@ -462,6 +643,28 @@ void output_exports( DLLSPEC *spec )
+     output( "\t.align %d\n", get_alignment(get_ptr_size()) );
+     output( ".L__wine_spec_exports_end:\n" );
+ 
++    /* output syscall wrappers */
++
++    if (needs_syscalls(spec))
++    {
++        output( "\t.text\n" );
++        for (i = spec->base; i <= spec->limit; i++)
++        {
++            ORDDEF *odp = spec->ordinals[i];
++            if (odp && (odp->flags & (FLAG_FORWARD|FLAG_EXT_LINK)) == 0)
++            {
++                if (odp->type != TYPE_STUB && odp->type != TYPE_EXTERN)
++                {
++                    output( "__wine_spec_syscall_%s:\n", odp->name );
++                    output( "\t.byte 0x0f, 0x1f, 0x44, 0x00, 0x00\n" );
++                    output( "\tjmp %s\n", asm_name(odp->link_name) );
++                    output( "\t.byte 0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00\n" );
++                }
++            }
++        }
++        output( "\t.data\n" );
++    }
++
+     /* output relays */
+ 
+     if (!has_relays( spec ))
+@@ -832,14 +1035,8 @@ static void create_stub_exports_x86( DLLSPEC *spec )
+  *
+  * Helper to create a fake binary module from a spec file.
+  */
+-static void output_fake_module_pass( DLLSPEC *spec )
++static void output_fake_module_pass( DLLSPEC *spec, const char *native )
+ {
+-    static const unsigned char dll_code_section[] = { 0x31, 0xc0,          /* xor %eax,%eax */
+-                                                      0xc2, 0x0c, 0x00 };  /* ret $12 */
+-
+-    static const unsigned char exe_code_section[] = { 0xb8, 0x01, 0x00, 0x00, 0x00,  /* movl $1,%eax */
+-                                                      0xc2, 0x04, 0x00 };            /* ret $4 */
+-
+     static const char fakedll_signature[] = "Wine placeholder DLL";
+     const unsigned int page_size = get_page_size();
+     const unsigned int section_align = page_size;
+@@ -903,7 +1100,8 @@ static void output_fake_module_pass( DLLSPEC *spec )
+     put_dword( label_rva("text_start") );            /* AddressOfEntryPoint */
+     put_dword( label_rva("text_start") );            /* BaseOfCode */
+     if (get_ptr_size() == 4) put_dword( 0 );         /* BaseOfData */
+-    put_pword( 0x10000000 );                         /* ImageBase */
++    if (image_base) put_pword( image_base );         /* ImageBase */
++    else put_pword( 0x10000000 );
+     put_dword( section_align );                      /* SectionAlignment */
+     put_dword( file_align );                         /* FileAlignment */
+     put_word( 1 );                                   /* MajorOperatingSystemVersion */
+@@ -1004,10 +1202,10 @@ static void output_fake_module_pass( DLLSPEC *spec )
+         if (target_cpu == CPU_x86)
+             create_stub_exports_x86( spec );
+         else
+-            put_data( dll_code_section, sizeof(dll_code_section) );
++            output_text_section( spec, section_align, native );
+     }
+     else
+-        put_data( exe_code_section, sizeof(exe_code_section) );
++        output_text_section( spec, section_align, native );
+     put_label( "text_end" );
+ 
+     /* .reloc contents */
+@@ -1035,18 +1233,18 @@ static void output_fake_module_pass( DLLSPEC *spec )
+  *
+  * Build a fake binary module from a spec file.
+  */
+-void output_fake_module( DLLSPEC *spec )
++void output_fake_module( DLLSPEC *spec, const char *native )
+ {
+     resolve_imports( spec );
+ 
+     /* First pass */
+     init_output_buffer();
+-    output_fake_module_pass( spec );
++    output_fake_module_pass( spec, native );
+ 
+     /* Second pass */
+     output_buffer_pos = 0;
+     output_buffer_rva = 0;
+-    output_fake_module_pass( spec );
++    output_fake_module_pass( spec, native );
+ 
+     flush_output_buffer();
+ }
+-- 
+2.13.0
+

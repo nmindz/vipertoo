@@ -1,0 +1,38 @@
+From 4d007289352204e1fe2e23a0df4bafe731a468bd Mon Sep 17 00:00:00 2001
+From: gamax92 <gamax92@aol.com>
+Date: Sat, 20 May 2017 17:21:32 -0600
+Subject: [PATCH 7/7] Edit README
+
+The instructions here are misleading for trying to run Overwatch.
+---
+ README | 13 +++++--------
+ 1 file changed, 5 insertions(+), 8 deletions(-)
+
+diff --git a/README b/README
+index 5423e7bbf9..4d47b3b002 100644
+--- a/README
++++ b/README
+@@ -13,15 +13,12 @@ LICENSE for the details.
+ 
+ 2. QUICK START
+ 
+-From the top-level directory of the Wine source (which contains this file),
+-run:
++Overwatch requires a Shared WoW64 build of wine. Follow the directions at
++(https://wiki.winehq.org/Building_Wine#Shared_WoW64).
+ 
+-./configure
+-make
+-
+-Run programs as "wine program".  For more information and problem
+-resolution, read the rest of this file, the Wine man page, and
+-especially the wealth of information found at http://www.winehq.org.
++Ubuntu users will need to setup up a 32bit chroot or container,
++instructions to do that are here:
++(https://wiki.winehq.org/Building_Biarch_Wine_On_Ubuntu#Build_64-bit_Wine)
+ 
+ 
+ 3. REQUIREMENTS
+-- 
+2.13.0
+

@@ -1,0 +1,47 @@
+From 49901b2e9183fca2d9c732d6e7fd688780164bd5 Mon Sep 17 00:00:00 2001
+From: gamax92 <gamax92@aol.com>
+Date: Sat, 20 May 2017 17:04:39 -0600
+Subject: [PATCH 6/7] Handle block size in get_gnutls_cipher
+
+---
+ dlls/bcrypt/bcrypt_main.c | 20 ++++++++++++++------
+ 1 file changed, 14 insertions(+), 6 deletions(-)
+
+diff --git a/dlls/bcrypt/bcrypt_main.c b/dlls/bcrypt/bcrypt_main.c
+index bfa44cb18c..8e84ebc743 100644
+--- a/dlls/bcrypt/bcrypt_main.c
++++ b/dlls/bcrypt/bcrypt_main.c
+@@ -903,16 +903,24 @@ static gnutls_cipher_algorithm_t get_gnutls_cipher( const struct key *key )
+     switch (key->alg_id)
+     {
+     case ALG_ID_AES:
+-        WARN( "handle block size\n" );
++        if (key->secret_len != 16 && key->secret_len != 32)
++        {
++            FIXME( "bad secret_len %d for AES\n", key->secret_len );
++            return GNUTLS_CIPHER_UNKNOWN;
++        }
+         switch (key->mode)
+         {
+-            case MODE_ID_GCM: return GNUTLS_CIPHER_AES_128_GCM;
+-            case MODE_ID_ECB: /* can be emulated with CBC + empty IV */
+-            case MODE_ID_CBC:
+-            default:          return GNUTLS_CIPHER_AES_128_CBC;
++        case MODE_ID_GCM:
++            return key->secret_len == 16 ? GNUTLS_CIPHER_AES_128_GCM : GNUTLS_CIPHER_AES_256_GCM;
++        case MODE_ID_ECB: /* can be emulated with CBC + empty IV */
++        case MODE_ID_CBC:
++            return key->secret_len == 16 ? GNUTLS_CIPHER_AES_128_CBC : GNUTLS_CIPHER_AES_256_CBC;
++        default:
++            FIXME( "AES with mode %u not supported\n", key->mode );
++            return GNUTLS_CIPHER_UNKNOWN;
+         }
+     default:
+-        FIXME( "algorithm %u not supported\n", key->alg_id );
++        FIXME( "algorithm %u with mode %u not supported\n", key->alg_id, key->mode );
+         return GNUTLS_CIPHER_UNKNOWN;
+     }
+ }
+-- 
+2.13.0
+

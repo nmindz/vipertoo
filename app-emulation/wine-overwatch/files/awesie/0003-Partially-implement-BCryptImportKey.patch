@@ -1,0 +1,100 @@
+From 927ef91a1101aacc02a3d70326a1839a5cb9a760 Mon Sep 17 00:00:00 2001
+From: gamax92 <gamax92@aol.com>
+Date: Thu, 18 May 2017 14:52:37 -0600
+Subject: [PATCH 3/7] Partially implement BCryptImportKey
+
+---
+ dlls/bcrypt/bcrypt.spec   |  2 +-
+ dlls/bcrypt/bcrypt_main.c | 35 +++++++++++++++++++++++++++++++++++
+ include/bcrypt.h          |  9 +++++++++
+ 3 files changed, 45 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/bcrypt/bcrypt.spec b/dlls/bcrypt/bcrypt.spec
+index f5911d2cd4..b2cccd5aaa 100644
+--- a/dlls/bcrypt/bcrypt.spec
++++ b/dlls/bcrypt/bcrypt.spec
+@@ -31,7 +31,7 @@
+ @ stdcall BCryptGetProperty(ptr wstr ptr long ptr long)
+ @ stdcall BCryptHash(ptr ptr long ptr long ptr long)
+ @ stdcall BCryptHashData(ptr ptr long long)
+-@ stub BCryptImportKey
++@ stdcall BCryptImportKey(ptr ptr wstr ptr ptr long ptr long long)
+ @ stub BCryptImportKeyPair
+ @ stdcall BCryptOpenAlgorithmProvider(ptr wstr wstr long)
+ @ stub BCryptQueryContextConfiguration
+diff --git a/dlls/bcrypt/bcrypt_main.c b/dlls/bcrypt/bcrypt_main.c
+index d269083eca..bfa44cb18c 100644
+--- a/dlls/bcrypt/bcrypt_main.c
++++ b/dlls/bcrypt/bcrypt_main.c
+@@ -1331,6 +1331,41 @@ NTSTATUS WINAPI BCryptDecrypt( BCRYPT_KEY_HANDLE handle, UCHAR *input, ULONG inp
+     return status;
+ }
+ 
++NTSTATUS WINAPI BCryptImportKey(BCRYPT_ALG_HANDLE algorithm, BCRYPT_KEY_HANDLE hImportKey,
++                                const WCHAR *blobtype, BCRYPT_KEY_HANDLE *handle, UCHAR *object,
++                                ULONG object_len, UCHAR *pbInput, ULONG cbInput, ULONG flags)
++{
++    struct algorithm *alg = algorithm;
++    struct key *key;
++    NTSTATUS status;
++
++    FIXME("%p, %p, %s, %p, %p, %08x, %p, %08x, %08x - semistub\n", alg, hImportKey,
++          wine_dbgstr_w(blobtype), handle, object, object_len, pbInput, cbInput, flags);
++
++	if (!strcmpW(blobtype, BCRYPT_KEY_DATA_BLOB)) {
++		struct _BCRYPT_KEY_DATA_BLOB_HEADER *kdbh = (BCRYPT_KEY_DATA_BLOB_HEADER*)pbInput;
++
++		if (!(key = HeapAlloc( GetProcessHeap(), 0, sizeof(*key) )))
++		{
++		    *handle = NULL;
++		    return STATUS_NO_MEMORY;
++		}
++		key->hdr.magic = MAGIC_KEY;
++
++		if ((status = key_init( key, alg, pbInput + sizeof(BCRYPT_KEY_DATA_BLOB_HEADER), kdbh->cbKeyData )))
++		{
++		    HeapFree( GetProcessHeap(), 0, key );
++		    *handle = NULL;
++		    return status;
++		}
++
++		*handle = key;
++		return STATUS_SUCCESS;
++	} else {
++		return STATUS_NOT_IMPLEMENTED;
++	}
++}
++
+ BOOL WINAPI DllMain( HINSTANCE hinst, DWORD reason, LPVOID reserved )
+ {
+     switch (reason)
+diff --git a/include/bcrypt.h b/include/bcrypt.h
+index b8ff624214..3e9cc7f8d7 100644
+--- a/include/bcrypt.h
++++ b/include/bcrypt.h
+@@ -40,6 +40,8 @@
+ typedef LONG NTSTATUS;
+ #endif
+ 
++#define BCRYPT_KEY_DATA_BLOB (const WCHAR []){'K','e','y','D','a','t','a','B','l','o','b',0}
++
+ #define BCRYPT_ALGORITHM_NAME (const WCHAR []){'A','l','g','o','r','i','t','h','m','N','a','m','e',0}
+ #define BCRYPT_AUTH_TAG_LENGTH (const WCHAR []){'A','u','t','h','T','a','g','L','e','n','g','t','h',0}
+ #define BCRYPT_BLOCK_LENGTH (const WCHAR []){'B','l','o','c','k','L','e','n','g','t','h',0}
+@@ -129,6 +131,13 @@ typedef PVOID BCRYPT_HASH_HANDLE;
+ /* Flags for BCryptEncrypt/BCryptDecrypt */
+ #define BCRYPT_BLOCK_PADDING        0x00000001
+ 
++typedef struct _BCRYPT_KEY_DATA_BLOB_HEADER
++{
++    ULONG dwMagic;
++    ULONG dwVersion;
++    ULONG cbKeyData;
++} BCRYPT_KEY_DATA_BLOB_HEADER, *PBCRYPT_KEY_DATA_BLOB_HEADER;
++
+ NTSTATUS WINAPI BCryptCloseAlgorithmProvider(BCRYPT_ALG_HANDLE, ULONG);
+ NTSTATUS WINAPI BCryptCreateHash(BCRYPT_ALG_HANDLE, BCRYPT_HASH_HANDLE *, PUCHAR, ULONG, PUCHAR, ULONG, ULONG);
+ NTSTATUS WINAPI BCryptDecrypt(BCRYPT_KEY_HANDLE, PUCHAR, ULONG, VOID *, PUCHAR, ULONG, PUCHAR, ULONG, ULONG *, ULONG);
+-- 
+2.13.0
+
