@@ -9,7 +9,7 @@
       <email>evandro@mindfree.io</email>
       <name><![CDATA[Evandro Camargo]]></name>
     </owner>
-    <source type="git">git@github.com:nmindz/vipertoo.git</source>
-    <feed>http://github.com/nmindz/vipertoo/commits/master.atom</feed>
+    <source type="git">https://github.com/nmindz/vipertoo.git</source>
+    <feed>https://github.com/nmindz/vipertoo/commits/master.atom</feed>
   </repo>
 </repositories>
