@@ -10,7 +10,7 @@ IUSE="java tcpd server"
 S="${WORKDIR}/vnc_unixsrc"
 DESCRIPTION="A great client/server software package allowing remote network access to graphical desktops"
 SRC_URI="mirror://sourceforge/vnc-tight/${P}_unixsrc.tar.bz2
-	mirror://gentoo/${PN}.png
+	http://www.tightvnc.com/logo/tightvnc-logo-90x90.png
 	java? ( mirror://sourceforge/vnc-tight/${P}_javasrc.tar.gz )"
 HOMEPAGE="http://www.tightvnc.com/"
 
@@ -127,7 +127,7 @@ src_install() {
 		rm -f "${ED}"/usr/share/man/man1/{Xvnc,vncserver}* || die
 	fi
 
-	newicon "${DISTDIR}"/tightvnc.png vncviewer.png
+	newicon "${DISTDIR}"/tightvnc-logo-90x90.png vncviewer.png
 	make_desktop_entry vncviewer vncviewer vncviewer Network
 
 	dodoc ChangeLog README WhatsNew

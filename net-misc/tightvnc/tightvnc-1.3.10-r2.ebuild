@@ -124,7 +124,7 @@ src_install() {
 		rm -f "${ED}"/usr/share/man/man1/{Xvnc,vncserver}* || die
 	fi
 
-	newicon "${DISTDIR}"/tightvnc.png vncviewer.png
+	newicon "${DISTDIR}"/tightvnc-logo-90x90.png vncviewer.png
 	make_desktop_entry vncviewer vncviewer vncviewer Network
 
 	dodoc ChangeLog README WhatsNew
