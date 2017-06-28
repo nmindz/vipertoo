@@ -4,5 +4,6 @@ app-emulation/wine-gecko
 app-emulation/wine-mono
 app-emulation/wine-vanilla
 app-emulation/wine-staging
+app-emulation/wine-overwatch
 app-eselect/wine
 virtual/wine
