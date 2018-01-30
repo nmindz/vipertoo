@@ -1,13 +1,15 @@
+# Copyright 1999-2018 Gentoo Foundation
+# Distributed under the terms of the GNU General Public License v2
+
 # Mask all packages required by custom GL implementation switcher
-
-# Mask re-written (out-of-tree) GL implementation switcher
 app-eselect/eselect-opengl
-
-# Mask patched mesa versions
 media-libs/mesa
-
-# Mask patched xorg-server versions
 x11-base/xorg-server
-
-# Mask patched nvidia proprietary drivers
 x11-drivers/nvidia-drivers
+
+# Mask due to dependency on global package.use.mask:
+# media-libs/freetype infinality
+=media-libs/fontconfig-ultimate-2016.04.23
+
+# Mask wine-overwatch since it has been integrated into latest wine-staging versions (> 2.19)
+app-emulation/wine-overwatch
