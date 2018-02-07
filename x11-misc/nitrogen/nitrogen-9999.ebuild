@@ -11,7 +11,7 @@ SRC_URI="http://projects.l3ib.org/${PN}/files/${P}.tar.gz"
 # https://github.com/l3ib/nitrogen.git
 
 if [[ "${PV}" == "9999" ]]; then
-	#KEYWORDS=""
+	KEYWORDS="**"
 	EGIT_REPO_URI="https://github.com/l3ib/nitrogen"
 	inherit git-r3
 	SRC_URI=""
