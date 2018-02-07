@@ -8,9 +8,19 @@ DESCRIPTION="A background browser and setter for X"
 HOMEPAGE="https://github.com/l3ib/nitrogen"
 SRC_URI="http://projects.l3ib.org/${PN}/files/${P}.tar.gz"
 
+# https://github.com/l3ib/nitrogen.git
+
+if [[ "${PV}" == "9999" ]]; then
+	#KEYWORDS=""
+	EGIT_REPO_URI="https://github.com/l3ib/nitrogen"
+	inherit git-r3
+	SRC_URI=""
+else
+	KEYWORDS="amd64 x86"
+fi
+
 LICENSE="GPL-2"
 SLOT="0"
-KEYWORDS="amd64 x86"
 IUSE="nls xinerama"
 
 RDEPEND="
@@ -27,17 +37,14 @@ DEPEND="
 "
 
 src_prepare() {
-	default
-
-	sed -i -e '/^UPDATE_DESKTOP/s#=.*#= :#g' data/Makefile.am || die
-
 	eautoreconf
+	default
 }
 
 src_configure() {
 	append-cxxflags -std=c++11
 	econf \
-		$(use_enable nls) \
+		# $(use_enable nls) \
 		$(use_enable xinerama)
 }
 
