@@ -1,0 +1,14 @@
+diff -Naur a/cmake/01-core.cmake b/cmake/01-core.cmake
+--- a/cmake/01-core.cmake	2017-10-17 11:27:35.796844767 +0200
++++ b/cmake/01-core.cmake	2017-10-17 11:45:33.696860759 +0200
+@@ -21,10 +21,8 @@
+ # Compiler flags
+ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
+ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
+-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
+ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
+ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic")
+-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic-errors")
+ 
+ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG")
+ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0")
