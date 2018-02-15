@@ -37,7 +37,6 @@ RDEPEND="
 src_unpack() {
 	unpack ${A}
 	cd "${S}" || die "cd failed"
-	gunzip ${PN}.1.gz || die "gunzip failed"
 }
 
 src_install() {
