@@ -7,7 +7,7 @@ inherit eutils perl-module
 
 DESCRIPTION="A frontend for ClamAV using Gtk2-perl"
 HOMEPAGE="https://dave-theunsub.github.io/clamtk/"
-SRC_URI="https://bitbucket.org/davem_/clamtk/downloads/${P}.tar.xz"
+SRC_URI="https://bitbucket.org/davem_/clamtk/downloads/${P}.tar.gz"
 
 LICENSE="|| ( Artistic GPL-1+ )"
 SLOT="0"
@@ -37,6 +37,7 @@ RDEPEND="
 src_unpack() {
 	unpack ${A}
 	cd "${S}" || die "cd failed"
+	gunzip ${PN}.1.gz || die "gunzip failed"
 }
 
 src_install() {
