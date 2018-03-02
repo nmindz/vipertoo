@@ -21,6 +21,7 @@ REQUIRED_USE=""
 RDEPEND="
 	virtual/udev
 	virtual/libudev
+	sys-libs/libudev-compat
 	media-video/ffmpeg"
 
 RESTRICT="mirror strip"
