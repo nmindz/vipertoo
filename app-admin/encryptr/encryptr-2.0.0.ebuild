@@ -5,7 +5,7 @@ EAPI=6
 
 inherit desktop unpacker
 
-DESCRIPTION="TeamSpeak Client - Voice Communication Software"
+DESCRIPTION="Encryptr is a zero-knowledge cloud-based password manager"
 HOMEPAGE="https://spideroak.com"
 SRC_URI="
 	amd64? ( https://spideroak.com/dist/encryptr/signed/linux/targz/encryptr-${PV}_amd.tar.gz )
