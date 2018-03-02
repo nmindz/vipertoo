@@ -44,7 +44,7 @@ src_install() {
 
 	fperms +x /opt/encryptr/encryptr-bin
 
-	dobin "${FILESDIR}/encryptr"
+	dosym "/opt/encryptr/encryptr-bin" "/usr/bin/encryptr"
 
 	make_desktop_entry encryptr-bin Encryptr \
 		"${FILESDIR}/logo.png" \
