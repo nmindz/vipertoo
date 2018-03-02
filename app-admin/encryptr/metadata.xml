@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "http://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+  <maintainer type="person">
+    <email>evandro@mindfree.io</email>
+    <name>Evandro Camargo</name>
+  </maintainer>
+  <longdescription>Encryptr is a zero-knowledge cloud-based password manager / e-wallet powered by Crypton</longdescription>
+</pkgmetadata>
