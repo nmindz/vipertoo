@@ -1,0 +1,43 @@
+diff --git a/setup.py b/setup.py
+index a7939ea..e3c1152 100644
+--- a/setup.py
++++ b/setup.py
+@@ -42,10 +42,9 @@ setup(
+     maintainer_email=R.MAINTAINER_EMAIL,
+     url='https://github.com/autokey/autokey',
+     license='GPLv3',
+-    packages=['autokey', 'autokey.gtkui', 'autokey.qtui'],
++    packages=['autokey', 'autokey.gtkui'],
+     package_dir={'': 'lib'},
+-    package_data={'autokey.qtui': ['data/*'],
+-                  'autokey.gtkui': ['data/*']},
++    package_data={'autokey.gtkui': ['data/*']},
+     data_files=[('share/icons/hicolor/scalable/apps',
+                  ['config/autokey.svg',
+                   'config/autokey.png',
+@@ -62,11 +61,9 @@ setup(
+                  ['config/ubuntu-mono-light/autokey-status.svg',
+                   'config/ubuntu-mono-light/autokey-status-error.svg']),
+                 ('share/applications',
+-                 ['config/autokey-qt.desktop',
+-                  'config/autokey-gtk.desktop']),
++                 ['config/autokey-gtk.desktop']),
+                 ('share/man/man1/',
+-                 ['doc/man/autokey-qt.1',
+-                  'doc/man/autokey-gtk.1',
++                 ['doc/man/autokey-gtk.1',
+                   'doc/man/autokey-run.1']),
+                 ('share/kde4/apps/autokey',
+                  ['config/autokeyui.rc'])
+@@ -74,7 +71,7 @@ setup(
+     entry_points = {
+         'console_scripts': ['autokey-gtk=autokey.gtkui.__main__:main']
+     },
+-    scripts=['autokey-qt', 'autokey-run', 'autokey-shell'],
++    scripts=['autokey-run', 'autokey-shell'],
+     install_requires=['dbus-python', 'pyinotify', 'python3-xlib'],
+     classifiers=[
+         'Development Status :: 4 - Beta',
+-- 
+2.16.1
+
