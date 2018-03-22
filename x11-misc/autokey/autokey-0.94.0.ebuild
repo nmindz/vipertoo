@@ -9,7 +9,7 @@ DESCRIPTION="Desktop automation utility for Linux and X11"
 HOMEPAGE="https://github.com/autokey/autokey"
 SRC_URI="https://github.com/autokey/autokey/archive/v${PV}.tar.gz"
 
-ICENSE="GPL-3"
+LICENSE="GPL-3"
 SLOT="0"
 KEYWORDS="~amd64 ~x86"
 IUSE="gtk doc"
