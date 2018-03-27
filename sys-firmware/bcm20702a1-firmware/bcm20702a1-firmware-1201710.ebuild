@@ -34,8 +34,15 @@ src_prepare() {
 }
 
 src_install() {
-	mkdir -p ${D%/}
-    cp -a Win10_USB-BT400_DRIVERS/Win10_USB-BT400_Driver_Package/64/BCM20702A1_001.002.014.1443.1572.hcd "${D}" || die
-    ln -rs ${D%/}/BCM20702A1_001.002.014.1443.1572.hcd ${D%/}/BCM20702A1-0a5c-216f.hcd
-    ln -rs ${D%/}/BCM20702A1-0a5c-216f.hcd ${D%/}/BCM20702A0-0a5c-216f.hcd
+    insinto /lib/firmware/brcm
+	doins -r Win10_USB-BT400_DRIVERS/Win10_USB-BT400_Driver_Package/64/BCM20702A1_001.002.014.1443.1572.hcd
+    dosym ${D%/}/BCM20702A1_001.002.014.1443.1572.hcd /lib/firmware/brcm/BCM20702A1-0a5c-216f.hcd
+    dosym ${D%/}/BCM20702A1-0a5c-216f.hcd /lib/firmware/brcm/BCM20702A0-0a5c-216f.hcd
+}
+
+pkg_postinst() {
+    elog "################################################################################"
+	elog "# The firmware files were installed to /lib/firmware/brcm/                     #"
+	elog "# Do not forget to restart the bluetooth service in order to load the firmware #"
+    elog "################################################################################"
 }
