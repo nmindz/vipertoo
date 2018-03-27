@@ -12,6 +12,7 @@ LICENSE="GPL-3"
 SLOT="0"
 KEYWORDS="~amd64"
 IUSE=""
+FEATURE="-usersandbox -sandbox"
 
 DEPEND="
     app-misc/hex2hcd
@@ -19,28 +20,22 @@ DEPEND="
 RDEPEND="${DEPEND}"
 
 S="${WORKDIR}"
-DESTDIR="/lib/firmware/brcm/"
+D="/lib/firmware/brcm/"
 
 src_unpack () {
-    unpack_zip ${A}
+    unpack_zip "${DISTDIR}/${A}"
 }
 
-# It does not look quite right... but it works.
-# TODO: Check if it is all necessary
+src_prepare() {
+    eapply_user
+
+	hex2hcd ${S%/}/Win10_USB-BT400_DRIVERS/Win10_USB-BT400_Driver_Package/64/BCM20702A1_001.002.014.1443.1572.hex \
+    ${S%/}/Win10_USB-BT400_DRIVERS/Win10_USB-BT400_Driver_Package/64/BCM20702A1_001.002.014.1443.1572.hcd
+}
 
 src_install() {
-	dodir ${DESTDIR%/}
-    into ${DESTDIR%/}
-
-    hex2hcd ${S%/}/Win10_USB-BT400_DRIVERS/Win10_USB-BT400_Driver_Package/64/BCM20702A1_001.002.014.1443.1572.hex \
-    ${S%/}/Win10_USB-BT400_DRIVERS/Win10_USB-BT400_Driver_Package/64/BCM20702A1_001.002.014.1443.1572.hcd
-
-    addpredict ${S%/}/Win10_USB-BT400_DRIVERS/Win10_USB-BT400_Driver_Package/64/BCM20702A1_001.002.014.1443.1572.hcd
-    addpredict ${DESTDIR%/}/BCM20702A1_001.002.014.1443.1572.hcd
-    addpredict ${DESTDIR%/}/BCM20702A1-0a5c-216f.hcd
-    addpredict ${DESTDIR%/}/BCM20702A0-0a5c-216f.hcd
-
-    doins ${S%/}/Win10_USB-BT400_DRIVERS/Win10_USB-BT400_Driver_Package/64/BCM20702A1_001.002.014.1443.1572.hcd
-    dosym ${DESTDIR%/}/BCM20702A1_001.002.014.1443.1572.hcd ${DESTDIR%/}/BCM20702A1-0a5c-216f.hcd
-    dosym ${DESTDIR%/}/BCM20702A1-0a5c-216f.hcd ${DESTDIR%/}/BCM20702A0-0a5c-216f.hcd
+	mkdir -p ${D%/}
+    cp -a Win10_USB-BT400_DRIVERS/Win10_USB-BT400_Driver_Package/64/BCM20702A1_001.002.014.1443.1572.hcd "${D}" || die
+    ln -rs ${D%/}/BCM20702A1_001.002.014.1443.1572.hcd ${D%/}/BCM20702A1-0a5c-216f.hcd
+    ln -rs ${D%/}/BCM20702A1-0a5c-216f.hcd ${D%/}/BCM20702A0-0a5c-216f.hcd
 }
