@@ -34,5 +34,6 @@ src_install() {
 	dosym /usr/local/warsaw/bin /usr/local/bin/warsaw
 	
 	dolib.so usr/local/lib/warsaw/* 	|| die "installing libs failed"
+	dosym /usr/local/warsaw/lib64 /usr/local/warsaw/lib
 	dosym /usr/local/warsaw/lib /usr/local/lib/warsaw
 }
