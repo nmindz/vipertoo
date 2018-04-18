@@ -25,11 +25,11 @@ src_unpack() {
 
 src_install() {
 	doinitd ${FILESDIR}/warsaw
-	insinto /usr/local
+	insinto /usr/local/warsaw/etc
 	doins -r usr/local/etc/warsaw/* 	|| die "installing conf files failed"
 	dosym /usr/local/warsaw/etc /usr/local/etc/warsaw
 
-	into /usr/local
+	into /usr/local/warsaw
 	dobin usr/local/bin/warsaw/* 		|| die "installing binaries failed"
 	dosym /usr/local/warsaw/bin /usr/local/bin/warsaw
 	
