@@ -1,0 +1,44 @@
+#!/sbin/openrc-run
+# Copyright 1999-2015 Gentoo Foundation
+# Distributed under the terms of the GNU General Public License v2
+### BEGIN INIT INFO
+# Provides:          warsaw
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Handles Warsaw - core
+# Description:       Warsaw Technology - core
+#  Developed by GAS Tecnologia<info@gastecnologia.com.br>
+#  Copyright 2015 GAS Tecnologia
+#  Adapted to OpenRC by Evandro Camargo <evandro@camargo.uk>
+### END INIT INFO
+
+name=core
+command=
+command_args=
+pidfile=/run/${name}.pid
+description="Warsaw Technology - Core"
+
+chmod +x /usr/local/bin/warsaw/$name
+
+start() {
+	ebegin "Starting Warsaw Core..."
+	start-stop-daemon \
+		--start \
+		--pidfile "${pidfile}" \
+		--background \
+		--exec /usr/local/bin/warsaw/$name
+}
+
+stop() {
+	ebegin "Stopping Warsaw Core..."
+	start-stop-daemon \
+		--stop \
+		--pidfile "${pidfile}"
+}
+
+restart() {
+	svc_stop
+    svc_start
+}
